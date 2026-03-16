@@ -193,23 +193,26 @@ class company_user {
             $departmentinfo = $DB->get_record('department', array('company' => $company->id, 'parent' => 0));
             $data->departmentid = $departmentinfo->id;
         }
-        // Deal with unset variable.
-        if (empty($data->managertype)) {
-            $data->managertype = 0;
-        }
-
         // Check if this hasn't already been called elsewhere.
         // Use only the unique constraint fields (companyid, userid, departmentid) for the lookup.
         if ($existing = $DB->get_record('company_users',
                              ['userid' => $user->id,
                               'companyid' => $company->id,
                               'departmentid' => $data->departmentid])) {
+            // If managertype was not provided, preserve the existing value.
+            if (empty($data->managertype)) {
+                $data->managertype = $existing->managertype;
+            }
             // Update managertype if it has changed.
             if ($existing->managertype != $data->managertype) {
                 $existing->managertype = $data->managertype;
                 $DB->update_record('company_users', $existing);
             }
         } else {
+            // For new records, default managertype to 0 if not provided.
+            if (empty($data->managertype)) {
+                $data->managertype = 0;
+            }
             // Create the user association.
             $DB->insert_record('company_users', array('userid' => $user->id,
                                                       'companyid' => $company->id,
