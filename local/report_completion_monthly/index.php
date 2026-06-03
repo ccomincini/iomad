@@ -311,7 +311,7 @@ $courselist = $DB->get_records_sql("SELECT DISTINCT lit.courseid, lit.coursename
                                     WHERE
                                     lit.companyid = :companyid
                                     $courselistsql
-                                    ORDER BY c.fullname",
+                                    ORDER BY lit.coursename",
                                    $coursesearchparams);
 
 

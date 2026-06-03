@@ -767,7 +767,7 @@ if (empty($courseid)) {
     }
 
     // Set up the SQL for the table.
-    $selectsql = "lit.id AS ignoredid,
+    $selectsql = "MIN(lit.id) AS ignoredid,
                   lit.courseid AS id,
                   lit.coursename AS coursename,
                   $departmentid AS departmentid,

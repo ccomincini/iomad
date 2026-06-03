@@ -123,6 +123,12 @@ class main implements renderable, templatable {
             $mandatoryselectuse = true;
         }
 
+        // Se l'utente non ha corsi in corso, mostra la scheda "Corsi disponibili"
+        // invece di una scheda vuota.
+        if ($tab == 'inprogress' && empty($myinprogress) && !empty($myavailable)) {
+            $tab = 'available';
+        }
+
         // Now, set the tab we are going to be viewing.
         $viewingavailable = false;
         $viewinginprogress = false;
