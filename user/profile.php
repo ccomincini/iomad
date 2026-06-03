@@ -50,11 +50,17 @@ if (!empty($CFG->forceloginforprofiles)) {
     require_login();
     if (isguestuser()) {
         $PAGE->set_context(context_system::instance());
-        $PAGE->set_title(get_string('user'));
+        $PAGE->set_title(get_string('loginrequired'));
         echo $OUTPUT->header();
-        echo $OUTPUT->confirm(get_string('guestcantaccessprofiles', 'error'),
-                              get_login_url(),
-                              $CFG->wwwroot);
+        echo $OUTPUT->confirm(
+            get_string('guestcantaccessprofiles', 'error'),
+            get_login_url(),
+            $CFG->wwwroot,
+            [
+                'headinglevel' => 1,
+                'confirmtitle' => get_string('loginrequired'),
+            ],
+        );
         echo $OUTPUT->footer();
         die;
     }
@@ -78,8 +84,7 @@ if ((!$user = $DB->get_record('user', array('id' => $userid))) || ($user->delete
 $currentuser = ($user->id == $USER->id);
 $context = $usercontext = context_user::instance($userid, MUST_EXIST);
 
-// IOMAD - Check the USER can manage the user.
-if (!user_can_view_profile($user, null, $context) || !company::check_can_manage($user->id)) {
+if (!user_can_view_profile($user, null, $context)) {
 
     // Course managers can be browsed at site level. If not forceloginforprofiles, allow access (bug #4366).
     $struser = get_string('user');

@@ -245,19 +245,19 @@ class observer {
                             $finalscore = $graderec->finalgrade / $graderec->rawgrademax * 100;
                         }
                     }
-            
+
                     // Is the record broken?
                     $broken = false;
                     if (empty($comprec->timeenrolled)) {
                         $broken = true;
                         $comprec->timeenrolled = $enrolrec->timestart;
                     }
-            
+
                     if (empty($comprec->timestarted)) {
                         $broken = true;
                         $comprec->timestarted = $enrolrec->timestart;
                     }
-            
+
                     if ($broken) {
                         // Update the completion record.
                         $DB->update_record('course_completions', $comprec);
@@ -280,6 +280,10 @@ class observer {
                     $trackid = $trackrec->id;
                     $task = new \local_iomad_track\task\savecertificatetask();
                     $task->queue_task($userid, $courseid, $trackid);
+
+                    // Get the ID of the certificate save task as we need to make sure it's completed.
+                    $emailtask = new \local_iomad_track\task\sendcompletionemailtask();
+                    $emailtask->queue_task($userid, $courseid, $trackrec->companyid, $trackid);
                 }
             } else {
                 // For some reason we don't already have a record.
@@ -289,6 +293,22 @@ class observer {
                 if (!empty($event->companyid)) {
                     $companyid = $event->companyid;
                 }
+
+                // If we don't have a company ID yet - then we need to try and find one.
+                if (empty($companyid)) {
+                    // Try by the user id.
+                    if ($company = company::by_userid($userid)) {
+                        $companyid = $company->id;
+                    } else if ($companycourserecs = $DB->get_records('company_course', ['courseid' => $courseid])) {
+                        // Does the course belong to any company?
+                        if ($count($companycourserecs == 1)) {
+                            $companycourserec = array_pop($companycourserecs);
+                            $companyid = $companycourserec->companyid;
+                        }
+                    }
+                }
+
+                // Get the rest of the info.
                 $userrec = $DB->get_record('user', array('id' => $userid));
                 $courserec = $DB->get_record('course', array('id' => $courseid));
                 $licenseid = 0;
@@ -324,7 +344,7 @@ class observer {
                         $licensename = $license->name;
                     }
                 }
-    
+
                 // Record the completion event.
                 $completion = new \StdClass();
                 $completion->courseid = $courseid;
@@ -339,12 +359,12 @@ class observer {
                 $completion->licensename = $licensename;
                 $completion->licenseallocated = $licenseallocated;
                 $completion->modifiedtime = time();
-    
+
                 // Deal with completion valid length.
                 if (!empty($offset)) {
                     $completion->timeexpires = $completion->timecompleted + $offset;
                 }
-    
+
                 $trackid = $DB->insert_record('local_iomad_track', $completion);
 
                 // Fire the ad-hoc task to generate the certificate.
@@ -352,6 +372,10 @@ class observer {
                 // are potentially part of this event listener set.
                 $task = new \local_iomad_track\task\savecertificatetask();
                 $task->queue_task($userid, $courseid, $trackid);
+
+                // Get the ID of the certificate save task as we need to make sure it's completed.
+                $emailtask = new \local_iomad_track\task\sendcompletionemailtask();
+                $emailtask->queue_task($userid, $courseid, $companyid, $trackid);
             }
         }
 
@@ -514,7 +538,15 @@ class observer {
 
         // We only care about company users.
         if (empty($companyid)) {
-            return true;
+            // Try and get a company id for the user - as it may not be set when the event is fired.
+            if ($company = company::by_userid($userid, true)) {
+                $companyid = $company->id;
+            }
+
+            // Do we now have a companyid?
+            if (empty($companyid) || !($companyid > 0)) {
+                return true;
+            }
         }
 
         // Get the enrolment information.
@@ -551,7 +583,7 @@ class observer {
         $enrol = $DB->get_record('enrol', ['id' => $enrolrec->enrolid]);
         $companies = [$companyid];
         if ($enrol->enrol == 'self') {
-            // If this is an unassigned course or an open shared course - 
+            // If this is an unassigned course or an open shared course -
             if ($DB->get_record('iomad_courses', ['courseid' => $courseid, 'shared' => 1]) ||
                 !$DB->get_record('iomad_courses', ['courseid' => $courseid])) {
               // The it's evey company the user is assigned to.
@@ -606,7 +638,6 @@ class observer {
                                  'coursename' => $courserec->fullname,
                                  'companyid' => $companyid,
                                  'timeenrolled' => $timeenrolled,
-                                 'timestarted' => $timeenrolled,
                                  'modifiedtime' => $modifiedtime];
                     $DB->insert_record('local_iomad_track', $entry);
                 }
@@ -634,6 +665,7 @@ class observer {
         // Check if there is already an entry for this.
         if ($entries = $DB->get_records('local_iomad_track', array('userid' => $userid,
                                                                  'courseid' => $courseid,
+                                                                 'coursecleared' => 0,
                                                                  'timecompleted' => null))) {
             if ($enrolrec = $DB->get_record_sql("SELECT ue.* FROM {user_enrolments} ue
                                                      JOIN {enrol} e ON (ue.enrolid = e.id)
@@ -782,5 +814,54 @@ class observer {
         }
 
         return true;
+    }
+
+    /**
+     * Event observer for core\event\course_viewed
+     *
+     * @param \core\event\course_viewed $event
+     */
+    public static function course_viewed(\core\event\course_viewed $event): void {
+        global $DB;
+
+        $userid = $event->userid;
+        $courseid = $event->courseid;
+        $timestarted = $event->timecreated;
+        $modifiedtime = $event->timecreated;
+
+        // Is there anything we care about.
+        if (!$trackentries = $DB->get_records(
+            'local_iomad_track',
+            [
+                'userid' => $userid,
+                'courseid' => $courseid,
+                'coursecleared' => 0,
+                'timestarted' => null,
+            ])) {
+
+            return;
+        }
+
+        // Process them.
+        foreach ($trackentries as $trackentry) {
+            // Sanity check.
+            if ($DB->record_exists_select(
+                'local_iomad_track',
+                "userid = :userid
+                 AND courseid = :courseid
+                 AND timeenrolled > :timeenrolled",
+                [
+                    'courseid' => $courseid,
+                    'userid' => $userid,
+                    'timeenrolled' => $trackentry->timeenrolled,
+                ])) {
+                $DB->set_field('local_iomad_track', 'coursecleared', 1, ['id' => $trackentry->id]);
+                continue;
+            }
+
+            // Record the start time.
+            $DB->set_field('local_iomad_track', 'timestarted', $timestarted, ['id' => $trackentry->id]);
+            $DB->set_field('local_iomad_track', 'modifiedtime', $modifiedtime, ['id' => $trackentry->id]);
+        }
     }
 }

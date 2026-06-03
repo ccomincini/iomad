@@ -18,161 +18,212 @@
 // Returns list of users with their user ids.
 
 /**
+ * IOMAD Dashboard upload user main page
+ *
  * @package   block_iomad_company_admin
  * @copyright 2021 Derick Turner
  * @author    Derick Turner
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-require_once(dirname(__FILE__) . '/../../config.php');
+use block_iomad_company_admin\event\{dashboard_page_viewed, user_license_assigned};
+use block_iomad_company_admin\forms\{
+    company_uploaduser_form1,
+    company_uploaduser_form2,
+    company_uploaduser_form3
+};
+use core\event\user_updated;
+
+require_once(__DIR__ . '/../../config.php');
+require_once(__DIR__ . '/lib.php');
 require_once($CFG->libdir.'/adminlib.php');
 require_once($CFG->libdir.'/csvlib.class.php');
 require_once($CFG->dirroot.'/user/profile/lib.php');
-require_once('uploaduser_form.php');
+require_once($CFG->libdir.'/formslib.php');
 
-$iid         = optional_param('iid', '', PARAM_INT);
+$iid = optional_param('iid', '', PARAM_INT);
 $previewrows = optional_param('previewrows', 10, PARAM_INT);
-$readcount   = optional_param('readcount', 0, PARAM_INT);
-$uploadtype  = optional_param('uutype', 0, PARAM_INT);
+$readcount = optional_param('readcount', 0, PARAM_INT);
+$uploadtype = optional_param('uutype', 0, PARAM_INT);
 $licenseid = optional_param('licenseid', 0, PARAM_INT);
 $userdepartment = optional_param('userdepartment', 0, PARAM_INT);
 $cancelled = optional_param('cancel', null, PARAM_CLEAN);
-$due         = optional_param_array('due', [], PARAM_INT);
+$due = optional_param_array('due', [], PARAM_INT);
 
+// Set up some defaults.
 if (!empty($due)) {
-    $duedate = strtotime($due['year'] . '-' . $due['month'] . '-' . $due['day'] . ' ' . $due['hour'] . ':' . $due['minute']);
+    $duedate = strtotime($due['year'] . '-' .
+               $due['month'] . '-' .
+               $due['day'] . ' ' .
+               $due['hour'] . ':' .
+               $due['minute']);
 } else {
     $duedate = 0;
 }
-
 if (!empty($licenseid)) {
     $SESSION->chosenlicenseid = $licenseid;
 }
-
-$montharray = array('jan' => '01',
-                    'feb' => '02',
-                    'mar' => 03,
-                    'apr' => 04,
-                    'may' => '05',
-                    'jun' => '06',
-                    'jul' => '07',
-                    'aug' => '08',
-                    'sep' => '09',
-                    'oct' => '10',
-                    'nov' => '11',
-                    'dec' => '12');
+$montharray = [
+    'jan' => '01',
+    'feb' => '02',
+    'mar' => 03,
+    'apr' => 04,
+    'may' => '05',
+    'jun' => '06',
+    'jul' => '07',
+    'aug' => '08',
+    'sep' => '09',
+    'oct' => '10',
+    'nov' => '11',
+    'dec' => '12',
+];
 
 define('UU_ADDNEW', 0);
 define('UU_ADDINC', 1);
 define('UU_ADD_UPDATE', 2);
 define('UU_UPDATE', 3);
 
-$choices = array(UU_ADDNEW    => get_string('uuoptype_addnew', 'tool_uploaduser'),
-                 UU_ADDINC    => get_string('uuoptype_addinc', 'tool_uploaduser'),
-                 UU_ADD_UPDATE => get_string('uuoptype_addupdate', 'tool_uploaduser'),
-                 UU_UPDATE     => get_string('uuoptype_update', 'tool_uploaduser'));
+$choices = [
+    UU_ADDNEW => get_string('uuoptype_addnew', 'tool_uploaduser'),
+    UU_ADDINC => get_string('uuoptype_addinc', 'tool_uploaduser'),
+    UU_ADD_UPDATE => get_string('uuoptype_addupdate', 'tool_uploaduser'),
+    UU_UPDATE => get_string('uuoptype_update', 'tool_uploaduser'),
+];
 
-@set_time_limit(3600); // 1 hour should be enough.
-raise_memory_limit(MEMORY_EXTRA);
-
+// Log in and set up $PAGE.
 require_login();
 
+// Set the companyid.
 $systemcontext = context_system::instance();
-
-// Set the companyid
 $companyid = iomad::get_my_companyid($systemcontext);
 $companycontext = \core\context\company::instance($companyid);
 $company = new company($companyid);
+$companyshortname = $company->get_shortname();
 
-iomad::require_capability('block/iomad_company_admin:user_upload',$companycontext);
+// Can we even do anything?
+iomad::require_capability('block/iomad_company_admin:user_upload', $companycontext);
 
-// Correct the navbar .
+// Add some more time for processing.
+// 1 hour should be enough.
+@set_time_limit(3600);
+raise_memory_limit(MEMORY_EXTRA);
+
 // Set the name for the page.
 $linktext = get_string('uploadusers', 'tool_uploaduser');
+
 // Set the url.
 $linkurl = new moodle_url('/blocks/iomad_company_admin/uploaduser.php');
 
-// Print the page header.
+// Finish setting up PAGE.
 $PAGE->set_context($companycontext);
 $PAGE->set_url($linkurl);
 $PAGE->set_pagelayout('base');
 $PAGE->set_title($linktext);
+
 // Set the page heading.
 $PAGE->set_heading($linktext);
 
-$PAGE->requires->jquery();
+// Javascript for license selectors and department picker.
+$PAGE->requires->js_call_amd('block_iomad_company_admin/company_user', 'init', []);;
+$PAGE->requires->js_call_amd(
+    'block_iomad_company_admin/department_select',
+    'init',
+    ['deptid', '', $userdepartment]);
 
-// Javascript for fancy select.
-// Parameter is name of proper select form element.
-$PAGE->requires->js_call_amd('block_iomad_company_admin/department_select', 'init', array('deptid', '', $userdepartment));
+// Log this page view.
+dashboard_page_viewed::create_from_url($PAGE->url->out())->trigger();
 
-// get output renderer
+// Get output renderer.
 $output = $PAGE->get_renderer('block_iomad_company_admin');
 
-$companyshortname = '';
-if ($companyid ) {
-    $company = new company($companyid);
-    $companyshortname = $company->get_shortname();
-}
-
-$struserrenamed             = get_string('userrenamed', 'tool_uploaduser');
-$strusernotrenamedexists    = get_string('usernotrenamedexists', 'error');
-$strusernotrenamedmissing   = get_string('usernotrenamedmissing', 'error');
-$strusernotrenamedoff       = get_string('usernotrenamedoff', 'error');
-$strusernotrenamedadmin     = get_string('usernotrenamedadmin', 'error');
-
-$struserupdated             = get_string('useraccountupdated', 'tool_uploaduser');
-$strusernotupdated          = get_string('usernotupdatederror', 'error');
+// Set up some strings.
+$struserrenamed = get_string('userrenamed', 'tool_uploaduser');
+$strusernotrenamedexists = get_string('usernotrenamedexists', 'error');
+$strusernotrenamedmissing = get_string('usernotrenamedmissing', 'error');
+$strusernotrenamedoff = get_string('usernotrenamedoff', 'error');
+$strusernotrenamedadmin = get_string('usernotrenamedadmin', 'error');
+$struserupdated = get_string('useraccountupdated', 'tool_uploaduser');
+$strusernotupdated = get_string('usernotupdatederror', 'error');
 $strusernotupdatednotexists = get_string('usernotupdatednotexists', 'error');
-$strusernotupdatedadmin     = get_string('usernotupdatedadmin', 'error');
-
-$struseradded               = get_string('newuser');
-$strusernotadded            = get_string('usernotaddedregistered', 'error');
-$strusernotaddederror       = get_string('usernotaddederror', 'error');
-
-$struserdeleted             = get_string('userdeleted', 'tool_uploaduser');
-$strusernotdeletederror     = get_string('usernotdeletederror', 'error');
-$strusernotdeletedmissing   = get_string('usernotdeletedmissing', 'error');
-$strusernotdeletedoff       = get_string('usernotdeletedoff', 'error');
-$strusernotdeletedadmin     = get_string('usernotdeletedadmin', 'error');
-
-$strcannotassignrole        = get_string('cannotassignrole', 'error');
-$strduplicateusername       = get_string('duplicateusername', 'error');
-
-$struserauthunsupported     = get_string('userauthunsupported', 'error');
-$stremailduplicate          = get_string('useremailduplicate', 'error');
-
-$strinvalidpasswordpolicy   = get_string('invalidpasswordpolicy', 'error');
-$errorstr                   = get_string('error');
-$strcantmanageuser          = get_string('invaliduser', 'block_iomad_company_admin');
-
+$strusernotupdatedadmin = get_string('usernotupdatedadmin', 'error');
+$struseradded = get_string('newuser');
+$strusernotadded = get_string('usernotaddedregistered', 'error');
+$strusernotaddederror = get_string('usernotaddederror', 'error');
+$struserdeleted = get_string('userdeleted', 'tool_uploaduser');
+$strusernotdeletederror = get_string('usernotdeletederror', 'error');
+$strusernotdeletedmissing = get_string('usernotdeletedmissing', 'error');
+$strusernotdeletedoff = get_string('usernotdeletedoff', 'error');
+$strusernotdeletedadmin = get_string('usernotdeletedadmin', 'error');
+$strcannotassignrole = get_string('cannotassignrole', 'error');
+$strduplicateusername = get_string('duplicateusername', 'error');
+$struserauthunsupported = get_string('userauthunsupported', 'error');
+$stremailduplicate = get_string('useremailduplicate', 'error');
+$strinvalidpasswordpolicy = get_string('invalidpasswordpolicy', 'error');
+$errorstr    = get_string('error');
+$strcantmanageuser = get_string('invaliduser', 'block_iomad_company_admin');
 $returnurl = $CFG->wwwroot."/blocks/iomad_company_admin/uploaduser.php";
 $cancelurl = $CFG->wwwroot."/blocks/iomad_company_admin/index.php";
-$bulknurl  = $CFG->wwwroot.'/'.$CFG->admin.'/user/user_bulk.php';
+$bulknurl = $CFG->wwwroot.'/'.$CFG->admin.'/user/user_bulk.php';
 
+// Set up some defaults.
 $today = time();
 $today = make_timestamp(date('Y', $today), date('m', $today), date('d', $today), 0, 0, 0);
 
 // Array of all valid fields for validation.
-$stdfields = array('id', 'firstname', 'lastname', 'username', 'email',
-        'city', 'country', 'lang', 'auth', 'timezone', 'mailformat',
-        'maildisplay', 'maildigest', 'htmleditor', 'ajax', 'autosubscribe',
-        'mnethostid', 'institution', 'department', 'idnumber', 'skype',
-        'msn', 'aim', 'yahoo', 'icq', 'phone1', 'phone2', 'address',
-        'url', 'description', 'descriptionformat', 'oldusername', 'deleted',
-        'password', 'temppassword', 'suspended');
+$stdfields = [
+    'id',
+    'firstname',
+    'lastname',
+    'username',
+    'email',
+    'city',
+    'country',
+    'lang',
+    'auth',
+    'timezone',
+    'mailformat',
+    'maildisplay',
+    'maildigest',
+    'htmleditor',
+    'ajax',
+    'autosubscribe',
+    'mnethostid',
+    'institution',
+    'department',
+    'idnumber',
+    'skype',
+    'msn',
+    'aim',
+    'yahoo',
+    'icq',
+    'phone1',
+    'phone2',
+    'address',
+    'url',
+    'description',
+    'descriptionformat',
+    'oldusername',
+    'deleted',
+    'password',
+    'temppassword',
+    'suspended',
+];
 
-$prffields = array();
-
+// Deal with profile fields.
+$prffields = [];
 if ($proffields = $DB->get_records('user_info_field')) {
     foreach ($proffields as $proffield) {
         $prffields[] = 'profile_field_'.$proffield->shortname;
     }
     unset($proffields);
 }
-if (empty($iid)) {
-    $mform = new admin_uploaduser_form1();
 
+// Have we started the process yet?
+if (empty($iid)) {
+    // Set up the initial form.
+    $mform = new company_uploaduser_form1();
+
+    // Process the initial form.
     if ($formdata = $mform->get_data()) {
         $iid = csv_import_reader::get_new_iid('uploaduser');
         $cir = new csv_import_reader($iid, 'uploaduser');
@@ -183,8 +234,14 @@ if (empty($iid)) {
                                             $formdata->encoding,
                                             $formdata->delimiter_name,
                                             'validate_user_upload_columns');
+
+        $csvloaderror = $cir->get_error();
+        if (!is_null($csvloaderror)) {
+            throw new moodle_exception('csvloaderror', 'error', $returnurl, $csvloaderror);
+        }
+
         if (!$columns = $cir->get_columns()) {
-           throw new moodle_exception('cannotreadtmpfile', 'error', $returnurl);
+            throw new moodle_exception('cannotreadtmpfile', 'error', $returnurl);
         }
 
         unset($content);
@@ -205,17 +262,17 @@ if (empty($iid)) {
                 }
             }
             if (!$DB->get_records_sql("SELECT * FROM {user} u
-                                       JOIN {company_users} cu 
+                                       JOIN {company_users} cu
                                        ON (u.id = cu.userid)
                                        WHERE u.username = :username
                                        AND cu.companyid = :companyid",
-                                      ['username' =>  $usercheck->username,
+                                      ['username' => $usercheck->username,
                                        'companyid' => $companyid]) &&
                 $optype != 3) {
                 $newusercount++;
-            } else if (($optype == 2 || $optype ==3) && isset($usercheck->suspended)
+            } else if (($optype == 2 || $optype == 3) && isset($usercheck->suspended)
                        && $usercheck->suspended == 0
-                       && $DB->get_record('user', array('username' =>  $usercheck->username, 'suspended' => 1))) {
+                       && $DB->get_record('user', ['username' => $usercheck->username, 'suspended' => 1])) {
                 $newusercount++;
             }
         }
@@ -227,44 +284,53 @@ if (empty($iid)) {
         }
 
         if ($readcount === false) {
-            // TODO: need more detailed error info.
             throw new moodle_exception('csvloaderror', '', $returnurl);
         } else if ($readcount == 0) {
             throw new moodle_exception('csvemptyfile', 'error', $returnurl);
         }
-        // Continue to form2.
-
     } else {
         $PAGE->set_heading($linktext);
+
+        // Display the page.
         echo $output->header();
 
+        // Display the first form.
         $mform->display();
+
+        // Display the footer.
         echo $output->footer();
         die;
     }
 } else {
+    // Set up the CSV processor.
     $cir = new csv_import_reader($iid, 'uploaduser');
 }
 
+// Sanity checking.
 if (!$columns = $cir->get_columns()) {
     throw new moodle_exception('cannotreadtmpfile', 'error', $returnurl);
 }
 
-$mform = new admin_uploaduser_form2(null, $columns);
-// Get initial date from form1.
-$mform->set_data(array('iid' => $iid,
-                       'previewrows' => $previewrows,
-                       'readcount' => $readcount,
-                       'uutypelabel' => $choices[$uploadtype],
-                       'uutype' => $uploadtype,
-                       'companyid' => $companyid));
+// Set up the second form.
+$mform = new company_uploaduser_form2(null, $columns);
 
-// If a file has been uploaded, then process it.
+// Set the initial data from form1.
+$mform->set_data([
+    'iid' => $iid,
+    'previewrows' => $previewrows,
+    'readcount' => $readcount,
+    'uutypelabel' => $choices[$uploadtype],
+    'uutype' => $uploadtype,
+    'companyid' => $companyid,
+]);
+
+// Was the form cancelled?
 if (!empty($cancelled)) {
     $cir->cleanup(true);
     redirect($cancelurl);
 
 } else if ($formdata = $mform->get_data()) {
+    // Process the form data.
     if (!empty($formdata->submitbutton)) {
         // Another cancelled check.
         if (!empty($formdata->cancel) && $formdata->cancel == 'Cancel') {
@@ -272,42 +338,44 @@ if (!empty($cancelled)) {
             redirect($returnurl);
         }
 
-        // Deal with program license.
+        // Deal with license courses.
+        $formdata->licensecourses = [];
         if (!empty($formdata->licenseid)) {
-            if ($DB->get_record('companylicense', array('id' => $formdata->licenseid, 'program' => 1))) {
-                // This is a program of courses.  Set them!
-                $formdata->licensecourses = $DB->get_records_sql_menu("SELECT c.id, clc.courseid FROM {companylicense_courses} clc
-                                                                       JOIN {course} c ON (clc.courseid = c.id
-                                                                       AND clc.licenseid = :licenseid)",
-                                                                       array('licenseid' => $formdata->licenseid));
+            if ($DB->get_record('companylicense', ['id' => $formdata->licenseid, 'program' => 1])) {
+                // This is a program of courses so need to get them from the database.
+                $formdata->licensecourses = $DB->get_records_sql_menu(
+                    "SELECT c.id, clc.courseid
+                     FROM {companylicense_courses} clc
+                     JOIN {course} c ON (clc.courseid = c.id
+                     AND clc.licenseid = :licenseid)",
+                    ['licenseid' => $formdata->licenseid]);
             } else {
-                $formdata->licensecourses = optional_param_array('licensecourses', array(), PARAM_INT);
+                // We get them from the license course selector.
+                $formdata->licensecourses = optional_param_array('licensecourses', [], PARAM_INT);
             }
-        } else {
-            $formdata->licensecourses = array();
         }
 
         // Print the header.
         $PAGE->set_heading(get_string('uploadusersresult', 'tool_uploaduser'));
         echo $output->header();
 
+        // Set te defaults from the form.
         $optype = $formdata->uutype;
-
-        $createpasswords   = (!empty($formdata->uupasswordnew) and $optype != UU_UPDATE);
-        $updatepasswords   = (!empty($formdata->uupasswordold)  and $optype != UU_ADDNEW and $optype != UU_ADDINC);
-        $allowrenames      = (!empty($formdata->uuallowrenames) and $optype != UU_ADDNEW and $optype != UU_ADDINC);
-        $allowdeletes      = (!empty($formdata->uuallowdeletes) and $optype != UU_ADDNEW and $optype != UU_ADDINC);
-        $updatetype        = isset($formdata->uuupdatetype) ? $formdata->uuupdatetype : 0;
-        $bulk              = $formdata->uubulk;
+        $createpasswords = (!empty($formdata->uupasswordnew) && $optype != UU_UPDATE);
+        $updatepasswords = (!empty($formdata->uupasswordold)  && $optype != UU_ADDNEW && $optype != UU_ADDINC);
+        $allowrenames = (!empty($formdata->uuallowrenames) && $optype != UU_ADDNEW && $optype != UU_ADDINC);
+        $allowdeletes = (!empty($formdata->uuallowdeletes) && $optype != UU_ADDNEW && $optype != UU_ADDINC);
+        $updatetype = !empty($formdata->uuupdatetype) ? $formdata->uuupdatetype : 0;
+        $bulk = $formdata->uubulk;
         $noemailduplicates = $formdata->uunoemailduplicates;
 
         // Verification moved to two places: after upload and into form2.
-        $usersnew     = 0;
+        $usersnew = 0;
         $usersupdated = 0;
-        $userserrors  = 0;
-        $deletes      = 0;
+        $userserrors = 0;
+        $deletes = 0;
         $deleteerrors = 0;
-        $renames      = 0;
+        $renames = 0;
         $renameerrors = 0;
         $usersskipped = 0;
         $weakpasswords = 0;
@@ -316,20 +384,19 @@ if (!empty($cancelled)) {
         $erroredusers = array();
 
         // Caches.
-        $ccache       = array(); // Course cache - do not fetch all courses here, we  will not probably use them all anyway!
-        $rolecache    = uu_allowed_roles_cache(); // Roles lookup cache.
-        $manualcache  = array(); // Cache of used manual enrol plugins in each course.
+        $ccache = []; // Course cache - do not fetch all courses here, we  will not probably use them all anyway!
+        $rolecache = uu_allowed_roles_cache(); // Roles lookup cache.
+        $manualcache = []; // Cache of used manual enrol plugins in each course.
 
-        $allowedauths   = uu_allowed_auths();
-        $allowedauths   = array_keys($allowedauths);
+        $allowedauths = uu_allowed_auths();
+        $allowedauths = array_keys($allowedauths);
         $availableauths = \core_component::get_plugin_list('auth');
         $availableauths = array_keys($availableauths);
 
-        // We use only manual enrol plugin here, if it is disabled no enrol is done.
+        // We use only manual enrol plugin here, if it is disabled - no enrol is done.
+        $manual = null;
         if (enrol_is_enabled('manual')) {
             $manual = enrol_get_plugin('manual');
-        } else {
-            $manual = null;
         }
 
         // Clear bulk selection.
@@ -345,37 +412,51 @@ if (!empty($cancelled)) {
         $upt = new uu_progress_tracker();
         $upt->init(); // Start table.
 
-        // Get a array of the profile fields which are the type datetime
-        $datetime = $DB->get_records('user_info_field', ['categoryid' => $companyid, 'datatype' => 'datetime'], '', 'shortname');
+        // Get a array of the profile fields which are the type datetime.
+        $datetime = $DB->get_records(
+            'user_info_field',
+            [
+                'categoryid' => $companyid,
+                'datatype' => 'datetime',
+            ],
+            '',
+            'shortname'
+        );
         $datetimearray = [];
         foreach ($datetime as $dt) {
             array_push($datetimearray, 'profile_field_'.$dt->shortname);
         }
 
+        // Process the CSV.
         while ($line = $cir->next()) {
             $upt->flush();
             $linenum++;
             $errornum = 1;
             $passeddepartment = false;
             $defaultdepartment = 0;
+            $newdepartments = [];
 
             $upt->track('line', $linenum);
 
             $forcechangepassword = false;
 
-            $user = new stdClass();
+            $user = (object) [];
             // By default, use the local mnet id (this may be changed in the file).
             $user->mnethostid = $CFG->mnet_localhost_id;
+
             // Add fields to user object.
             foreach ($line as $key => $value) {
                 if ($value !== '') {
                     $key = $columns[$key];
-                    $user->$key = $value;
-                    // Did we get oassed a deparment value?
-                    if (strpos($key, 'department') !== false) {
+
+                    // Did we get passed a department value?
+                    if (preg_match('/^department\d*$/', trim($key))) {
                         if (!empty($value)) {
+                            $newdepartments[] = $value;
                             $passeddepartment = true;
                         }
+                    } else {
+                        $user->$key = $value;
                     }
                     if (in_array($key, $upt->columns)) {
                         $upt->track($key, $value);
@@ -387,7 +468,7 @@ if (!empty($cancelled)) {
 
             if (empty($user->username) && !empty($user->email)) {
                 // No username given, try to find an existing user via the email address.
-                if ($perfexistinguser = $DB->get_record('user', array('email' => $user->email, 'mnethostid' => $user->mnethostid))) {
+                if ($perfexistinguser = $DB->get_record('user', ['email' => $user->email, 'mnethostid' => $user->mnethostid])) {
                     $user->username = $perfexistinguser->username;
                 } else {
                     // No existing user matches, generate a new username.
@@ -397,7 +478,7 @@ if (!empty($cancelled)) {
             }
 
             // Get username, first/last name now - we need them in templates!!
-            if ($optype == UU_UPDATE) {
+            if ($optype == UU_UPDATE || !empty($user->deleted)) {
                 // When updating only username is required.
                 if (!isset($user->username)) {
                     $upt->track('status', get_string('missingfield', 'error', 'username'), 'error');
@@ -408,11 +489,10 @@ if (!empty($cancelled)) {
                     $erroredusers[] = $line;
                     continue;
                 }
-
             } else {
                 $error = false;
                 // When all other ops need firstname and lastname.
-                if (!isset($user->firstname) or $user->firstname === '') {
+                if (!isset($user->firstname) || $user->firstname === '') {
                     $upt->track('status', get_string('missingfield', 'error', 'firstname'), 'error');
                     $upt->track('firstname', $errorstr, 'error');
                     $line[] = get_string('missingfield', 'error', 'firstname');
@@ -420,7 +500,7 @@ if (!empty($cancelled)) {
                     $userserrors++;
                     $error = true;
                 }
-                if (!isset($user->lastname) or $user->lastname === '') {
+                if (!isset($user->lastname) || $user->lastname === '') {
                     $upt->track('status', get_string('missingfield', 'error', 'lastname'), 'error');
                     $upt->track('lastname', $errorstr, 'error');
                     $line[] = get_string('missingfield', 'error', 'lastname');
@@ -435,7 +515,7 @@ if (!empty($cancelled)) {
                 }
                 // We require username too - we might use template for it though.
                 if (!isset($user->username)) {
-                    if (!isset($formdata->username) or $formdata->username === '') {
+                    if (!isset($formdata->username) || $formdata->username === '') {
                         $upt->track('status', get_string('missingfield', 'error', 'username'), 'error');
                         $upt->track('username', $errorstr, 'error');
                         $line[] = get_string('missingfield', 'error', 'username');
@@ -463,21 +543,21 @@ if (!empty($cancelled)) {
                 continue;
             }
 
-            if ($existinguser = $DB->get_record_sql("SELECT DISTINCT u.*
-                                                     FROM {user} u
-                                                     JOIN {company_users} cu
-                                                     ON (u.id = cu.userid)
-                                                     WHERE u.username = :username
-                                                     AND u.mnethostid = :mnethostid
-                                                     AND cu.companyid = :companyid",
-                                                    ['username' => $user->username,
-                                                     'mnethostid' => $user->mnethostid,
-                                                     'companyid' => $companyid])) {
+            if ($existinguser = $DB->get_record_sql(
+                "SELECT DISTINCT u.*
+                 FROM {user} u
+                 JOIN {company_users} cu ON (u.id = cu.userid)
+                 WHERE u.username = :username
+                 AND u.mnethostid = :mnethostid
+                 AND cu.companyid = :companyid",
+                ['username' => $user->username,
+                 'mnethostid' => $user->mnethostid,
+                 'companyid' => $companyid])) {
                 $upt->track('id', $existinguser->id, 'normal', false);
             }
 
             // Find out in username incrementing required.
-            if ($existinguser and $optype == UU_ADDINC) {
+            if ($existinguser && $optype == UU_ADDINC) {
                 $oldusername = $user->username;
                 $user->username = increment_username($user->username, $user->mnethostid);
                 $upt->track('username', '', 'normal', false); // Clear previous.
@@ -500,7 +580,10 @@ if (!empty($cancelled)) {
             foreach ($prffields as $field) {
                 if (isset($user->$field) && is_string($user->$field)) {
                     if (in_array($field, $datetimearray)) {
-                        if (preg_match('/(?P<day>\d{2})-(?P<month>[a-z]{3})-(?P<year>\d{4})/', strtolower($user->$field), $datearray)) {
+                        if (preg_match(
+                            '/(?P<day>\d{2})-(?P<month>[a-z]{3})-(?P<year>\d{4})/',
+                            strtolower($user->$field),
+                            $datearray)) {
                             $month = $montharray[$datearray[2]];
                             $unixtime = mktime (0, 0, 0, $month, $datearray['day'], $datearray['year']);
                             $user->$field = $unixtime;
@@ -519,7 +602,10 @@ if (!empty($cancelled)) {
                     // Process templates.
                     // Check if is in a dd-Mon-yyy format.
                     if (in_array($field, $datetimearray)) {
-                        if (preg_match('/(?P<day>\d{2})-(?P<month>[a-z]{3})-(?P<year>\d{4})/', strtolower($formdata->$field), $datearray)) {
+                        if (preg_match(
+                            '/(?P<day>\d{2})-(?P<month>[a-z]{3})-(?P<year>\d{4})/',
+                            strtolower($formdata->$field),
+                            $datearray)) {
                             $month = $montharray[$datearray[2]];
                             $unixtime = mktime (0, 0, 0, $month, $datearray['day'], $datearray['year']);
                             $user->$field = $unixtime;
@@ -588,7 +674,7 @@ if (!empty($cancelled)) {
                     continue;
                 }
 
-                if ($olduser = $DB->get_record('user', array('username' => $oldusername, 'mnethostid' => $user->mnethostid))) {
+                if ($olduser = $DB->get_record('user', ['username' => $oldusername, 'mnethostid' => $user->mnethostid])) {
                     $upt->track('id', $olduser->id, 'normal', false);
                     if (is_siteadmin($olduser->id)) {
                         $upt->track('status', $strusernotrenamedadmin, 'error');
@@ -600,7 +686,7 @@ if (!empty($cancelled)) {
                         $renameerrors++;
                         continue;
                     }
-                    $DB->set_field('user', 'username', $user->username, array('id' => $olduser->id));
+                    $DB->set_field('user', 'username', $user->username, ['id' => $olduser->id]);
                     $upt->track('username', '', 'normal', false); // Clear previous.
                     $upt->track('username', $oldusername.'-->'.$user->username, 'info');
                     $upt->track('status', $struserrenamed);
@@ -651,6 +737,7 @@ if (!empty($cancelled)) {
             }
 
             if ($existinguser) {
+                $userupdated = false;
                 $user->id = $existinguser->id;
 
                 if (is_siteadmin($user->id)) {
@@ -671,7 +758,7 @@ if (!empty($cancelled)) {
                     continue;
                 }
 
-                if (!empty($updatetype)) {
+                if ($updatetype != 0) {
                     $existinguser->timemodified = time();
                     if (empty($existinguser->timecreated)) {
                         if (empty($existinguser->firstaccess)) {
@@ -687,7 +774,7 @@ if (!empty($cancelled)) {
                     $allowed = array();
                     if ($updatetype == 1) {
                         $allowed = $columns;
-                    } else if ($updatetype == 2 or $updatetype == 3) {
+                    } else if ($updatetype == 2 || $updatetype == 3) {
                         $allowed = array_merge($stdfields, $prffields);
                     }
                     $temppasswordhandler = '';
@@ -695,22 +782,22 @@ if (!empty($cancelled)) {
                         if ($column == 'username') {
                             continue;
                         }
-                        if ((property_exists($existinguser, $column) and property_exists($user, $column))
-                             or in_array($column, $prffields)) {
+                        if ((property_exists($existinguser, $column) && property_exists($user, $column)) ||
+                            in_array($column, $prffields)) {
                             if ($updatetype == 3 && $existinguser->$column !== '') {
                                 // Missing == non-empty only!
                                 continue;
                             }
                             if (isset($user->$column) && $existinguser->$column !== $user->$column) {
                                 if ($column == 'email') {
-                                    if ($DB->record_exists_sql("SELECT DISTINCT u.id
-                                                                FROM {user} u
-                                                                JOIN {company_users} cu
-                                                                ON (u.id = cu.userid)
-                                                                WHERE u.email = :email
-                                                                AND cu.companyid = :companyid",
-                                                               ['email' => $user->email,
-                                                                'companyid' => $companyid])) {
+                                    if ($DB->record_exists_sql(
+                                        "SELECT DISTINCT u.id
+                                         FROM {user} u
+                                         JOIN {company_users} cu ON (u.id = cu.userid)
+                                         WHERE u.email = :email
+                                         AND cu.companyid = :companyid",
+                                        ['email' => $user->email,
+                                         'companyid' => $companyid])) {
                                         if ($noemailduplicates) {
                                             $upt->track('email', $stremailduplicate, 'error');
                                             $upt->track('status', $strusernotupdated, 'error');
@@ -766,6 +853,7 @@ if (!empty($cancelled)) {
                             }
                         }
                     }
+
                     // Do not update record if new auth plugin does not exist!
                     if (!in_array($existinguser->auth, $availableauths)) {
                         $upt->track('auth', get_string('userautherror', 'error', $existinguser->auth), 'error');
@@ -807,7 +895,6 @@ if (!empty($cancelled)) {
                     $DB->update_record('user', $existinguser);
 
                     // Remove user preference.
-
                     if (get_user_preferences('create_password', false, $existinguser)) {
                         unset_user_preference('create_password', $existinguser);
                     }
@@ -824,47 +911,116 @@ if (!empty($cancelled)) {
                             set_user_preference('auth_forcepasswordchange', 1, $existinguser->id);
                         }
                     }
-                    $upt->track('status', $struserupdated);
-                    $usersupdated++;
+
+                    // Only increment the counter if it's not already been incremented.
+                    if (!$userupdated) {
+                        $upt->track('status', $struserupdated);
+                        $usersupdated++;
+                        $userupdated = true;
+                    }
+
                     // Save custom profile fields data from csv file.
                     profile_save_data($existinguser);
 
-                    \core\event\user_updated::create_from_userid($existinguser->id)->trigger();
-     
-                    // Is the company department valid?
-                    if ($passeddepartment && !empty($existinguser->department)) {
-                        if (!$department = $DB->get_record('department', array('company' => $company->id,
-                                                                               'shortname' => $existinguser->department))) {
-                            $upt->track('department', get_string('invaliddepartment', 'block_iomad_company_admin'), 'error');
-                            $upt->track('status', $strusernotaddederror, 'error');
-                            $line[] = get_string('invaliddepartment', 'block_iomad_company_admin');
-                            $errornum++;
-                            $userserrors++;
-                            $erroredusers[] = $line;
-                            continue;
+                    user_updated::create_from_userid($existinguser->id)->trigger();
+                }
+
+                // Deal with department assignments.
+                if ($passeddepartment) {
+                    $departmentinvalid = false;
+
+                    // Remove user's existing department assignments.
+                    if ($updatetype == 1 || $updatetype == 2) {
+                        $existinguserdeps = $DB->get_records('company_users', ['userid' => $existinguser->id,
+                                                                               'companyid' => $company->id]);
+                        foreach ($existinguserdeps as $existinguserdep) {
+                            // Don't remove users from the top-level department.
+                            if ($existinguserdep->id == 0) {
+                                continue;
+                            }
+
+                            // Make sure the uploader can manage this department.
+                            if ($DB->record_exists('department', ['company' => $company->id,
+                                                                  'id' => $existinguserdep->departmentid])
+                                    && company::can_manage_department($existinguserdep->departmentid)) {
+                                // Don't remove users from departments they're about to be added to.
+                                if (in_array($existinguserdep->id, $newdepartments)) {
+                                    continue;
+                                }
+
+                                // Delete records in company_users for this department id with this user.
+                                $DB->delete_records('company_users', ['userid' => $existinguser->id,
+                                                                      'companyid' => $company->id,
+                                                                      'departmentid' => $existinguserdep->departmentid]);
+                            }
                         }
-                        // Make sure the user can manage this department.
-                        if (!company::can_manage_department($department->id)) {
-                            $upt->track('department', get_string('invaliddepartment', 'block_iomad_company_admin'), 'error');
-                            $upt->track('status', $strusernotaddederror, 'error');
-                            $line[] = get_string('invaliddepartment', 'block_iomad_company_admin');
-                            $errornum++;
-                            $userserrors++;
-                            $erroredusers[] = $line;
+                    }
+
+                    // Assign user to new departments.
+                    foreach ($newdepartments as $newdepartment) {
+                        if (empty($newdepartment)) {
                             continue;
                         }
 
-                        if ($userdep = $DB->get_record('company_users', array('userid' => $existinguser->id, 'companyid' => $company->id))) {
+                        // Is the company department valid?
+                        if (!$department = $DB->get_record('department', ['company' => $company->id,
+                                                                        'shortname' => $newdepartment])) {
+                            $departmentinvalid = true;
+                            break;
+                        }
+
+                        // Make sure the uploader can manage this department.
+                        if (!company::can_manage_department($department->id)) {
+                            $departmentinvalid = true;
+                            break;
+                        }
+
+                        // Don't need to add users to top-level department.
+                        if ($department->id == 0) {
+                            continue;
+                        }
+
+                        // Check whether the user is already in a department in the company.
+                        if ($DB->record_exists('company_users', ['userid' => $existinguser->id, 'companyid' => $company->id])) {
+                            // Create new record.
+                            $userdep = (object) [];
+                            $userdep->userid = $existinguser->id;
                             $userdep->departmentid = $department->id;
-                            $DB->update_record('company_users', $userdep);
+                            $userdep->companyid = $company->id;
+
+                            // If the record already exists, skip.
+                            if ($DB->record_exists('company_users', ['userid' => $userdep->userid,
+                                                                     'departmentid' => $userdep->departmentid,
+                                                                     'companyid' => $userdep->companyid])) {
+                                continue;
+                            }
+
+                            // Insert new record.
+                            $DB->insert_record('company_users', $userdep);
                         } else {
-                            // Add the user to the company
+                            // Add the user to the company.
                             $company->assign_user_to_company($existinguser->id, $department->id);
                         }
+
+                        // Only increment the counter if it's not already been incremented.
+                        if (!$userupdated) {
+                            $upt->track('status', $struserupdated);
+                            $usersupdated++;
+                            $userupdated = true;
+                        }
+                    }
+                    if ($departmentinvalid) {
+                        $upt->track('department', get_string('invaliddepartment', 'block_iomad_company_admin'), 'error');
+                        $upt->track('status', $strusernotaddederror, 'error');
+                        $line[] = get_string('invaliddepartment', 'block_iomad_company_admin');
+                        $errornum++;
+                        $userserrors++;
+                        $erroredusers[] = $line;
+                        continue;
                     }
                 }
             } else {
-                // Save the user to the database.
+                // Create new user record.
                 $user->confirmed = 1;
                 $user->timemodified = time();
                 $user->timecreated = time();
@@ -941,42 +1097,55 @@ if (!empty($cancelled)) {
                     $user->companyid = $companyid;
                 }
 
-                // Is the company department valid?
-                if (!empty($user->department)) {
-                    if (!$department = $DB->get_record('department', array('company' => $company->id,
-                                                                           'shortname' => $user->department))) {
-                        $upt->track('department', get_string('invaliddepartment', 'block_iomad_company_admin'), 'error');
-                        $upt->track('status', $strusernotaddederror, 'error');
-                        $line[] = get_string('invaliddepartment', 'block_iomad_company_admin');
-                        $errornum++;
-                        $userserrors++;
-                        $erroredusers[] = $line;
-                        continue;
-                    }
+                // Validate department assignments.
+                if ($passeddepartment) {
+                    $departmentinvalid = false;
+                    $validdepartments = [];
 
-                    // Make sure the user can manage this department.
-                    if (!company::can_manage_department($department->id)) {
-                        $upt->track('department', get_string('invaliddepartment', 'block_iomad_company_admin'), 'error');
-                        $upt->track('status', $strusernotaddederror, 'error');
-                        $line[] = get_string('invaliddepartment', 'block_iomad_company_admin');
-                        $errornum++;
-                        $userserrors++;
-                        $erroredusers[] = $line;
-                        continue;
+                    // Is the company department valid?
+                    if (!empty($newdepartments)) {
+                        foreach ($newdepartments as $newdepartment) {
+                            if (empty($newdepartment)) {
+                                continue;
+                            }
+
+                            // Is the company department valid?
+                            if (!$department = $DB->get_record('department', ['company' => $company->id,
+                                                                            'shortname' => $newdepartment])) {
+                                $departmentinvalid = true;
+                                break;
+                            }
+
+                            // Make sure the uploader can manage this department.
+                            if (!company::can_manage_department($department->id)) {
+                                $departmentinvalid = true;
+                                break;
+                            }
+
+                            // Don't need to add users to top-level department.
+                            if ($department->id == 0) {
+                                continue;
+                            }
+
+                            // Mark department as valid.
+                            $validdepartments[] = $department->id;
+                        }
+                    } else {
+                        // Is the company department valid?
+                        if (!$department = $DB->get_record('department', ['company' => $company->id,
+                                                                        'id' => $formdata->deptid])) {
+                            $departmentinvalid = true;
+                        } else {
+                            // Make sure the uploader can manage this department.
+                            if (!company::can_manage_department($department->id)) {
+                                $departmentinvalid = true;
+
+                                // Add department to valid list.
+                                $validdepartments[] = $department->id;
+                            }
+                        }
                     }
-                } else {
-                    if (!$department = $DB->get_record('department', array('company' => $company->id,
-                                                                           'id' => $formdata->deptid))) {
-                        $upt->track('department', get_string('invaliddepartment', 'block_iomad_company_admin'), 'error');
-                        $upt->track('status', $strusernotaddederror, 'error');
-                        $line[] = get_string('invaliddepartment', 'block_iomad_company_admin');
-                        $errornum++;
-                        $userserrors++;
-                        $erroredusers[] = $line;
-                        continue;
-                    }
-                    // Make sure the user can manage this department.
-                    if (!company::can_manage_department($department->id)) {
+                    if ($departmentinvalid) {
                         $upt->track('department', get_string('invaliddepartment', 'block_iomad_company_admin'), 'error');
                         $upt->track('status', $strusernotaddederror, 'error');
                         $line[] = get_string('invaliddepartment', 'block_iomad_company_admin');
@@ -986,7 +1155,8 @@ if (!empty($cancelled)) {
                         continue;
                     }
                 }
-                $user->departmentid = $department->id;
+
+                // Deal with password.
                 if (!empty($user->password)) {
                     $user->newpassword = $user->password;
                 } else {
@@ -1009,11 +1179,34 @@ if (!empty($cancelled)) {
                 // Save the profile information.
                 profile_save_data($user);
 
-                // Are we being passed company departments?
-                if ($passeddepartment) {
-                    // Stash the default in case we need to remove them from it later.
-                    $defaultdepartmentid = $department->id;
+                // Add user to department(s).
+                if (!empty($validdepartments)) {
+                    foreach($validdepartments as $validdepartment) {
+                        // Check whether the user is already in a department in the company.
+                        if ($DB->record_exists('company_users', ['userid' => $user->id, 'companyid' => $companyid])) {
+                            // Create new record.
+                            $userdep = (object) [];
+                            $userdep->userid = $user->id;
+                            $userdep->departmentid = $validdepartment;
+                            $userdep->companyid = $companyid;
+
+                            // If the record already exists, skip.
+                            if ($DB->record_exists('company_users', ['userid' => $userdep->userid,
+                                                                     'departmentid' => $userdep->departmentid,
+                                                                     'companyid' => $userdep->companyid])) {
+                                continue;
+                            }
+
+                            // Insert new record.
+                            $DB->insert_record('company_users', $userdep);
+                        } else {
+                            // Add the user to the company.
+                            $company->assign_user_to_company($user->id, $validdepartment);
+                        }
+                    }
                 }
+
+                // Track info.
                 $info = ': ' . $user->username .' (ID = ' . $user->id . ')';
                 $upt->track('status', $struseradded);
                 $upt->track('id', $user->id, 'normal', false);
@@ -1021,7 +1214,7 @@ if (!empty($cancelled)) {
             }
 
             // Do we have anything for bulk user actions?
-            if ($bulk == 2 or $bulk == 3) {
+            if ($bulk == 2 || $bulk == 3) {
                 if (!in_array($user->id, $SESSION->bulk_users)) {
                     $SESSION->bulk_users[] = $user->id;
                 }
@@ -1037,7 +1230,7 @@ if (!empty($cancelled)) {
                     }
                     $shortname = $user->{'course'.$i};
                     if (!array_key_exists($shortname, $ccache)) {
-                        if (!$course = $DB->get_record('course', array('shortname' => $shortname), 'id, shortname')) {
+                        if (!$course = $DB->get_record('course', ['shortname' => $shortname], 'id, shortname')) {
                             $upt->track('enrolments', get_string('unknowncourse', 'error', $shortname), 'error');
                             continue;
                         }
@@ -1045,7 +1238,7 @@ if (!empty($cancelled)) {
                         $ccache[$shortname]->groups = null;
                     }
 
-                    // find role
+                    // Find a role.
                     $roleid = false;
                     if (!empty($user->{'role'.$i})) {
                         $rolename = $user->{'role'.$i};
@@ -1057,59 +1250,82 @@ if (!empty($cancelled)) {
                         }
                     }
 
-                    company_user::enrol($user, [$ccache[$shortname]->id], $companyid , $roleid);
+                    // Get some details.
                     $coursecontext = context_course::instance($ccache[$shortname]->id);
                     $courserec = $DB->get_record('course', ['id' => $ccache[$shortname]->id]);
-                    EmailTemplate::send('user_added_to_course', ['course' => $courserec, 'user' => $user, 'due' => $duedate]);
 
-                    // find group to add to
+                    // Are they already enrolled within this tenant?
+                    if (!is_enrolled($coursecontext, $user->id) ||
+                        !$DB->record_exists(
+                            'local_iomad_track',
+                            [
+                                'userid' => $user->id,
+                                'courseid' => $courserec->id,
+                                'companyid' => $companyid,
+                                'coursecleared' => 0,
+                            ]
+                        )
+                    ) {
+                        // Enrol them.
+                        company_user::enrol($user, [$ccache[$shortname]->id], $companyid , $roleid);
+                        EmailTemplate::send(
+                            'user_added_to_course',
+                            [
+                                'course' => $courserec,
+                                'user' => $user,
+                                'due' => $duedate,
+                            ]
+                        );
+                    }
+
+                    // Find group to add to.
                     if (!empty($user->{'group'.$i})) {
-                        // make sure user is enrolled into course before adding into groups
+                        // Make sure user is enrolled into course before adding into groups.
                         if (!is_enrolled($coursecontext, $user->id)) {
                             $upt->track('enrolments', get_string('addedtogroupnotenrolled', '', $user->{'group'.$i}), 'error');
                             continue;
                         }
-                        //build group cache
+                        // Build group cache.
                         if (is_null($ccache[$shortname]->groups)) {
                             $ccache[$shortname]->groups = array();
                             if ($groups = groups_get_all_groups($course->id)) {
-                                foreach ($groups as $gid=>$group) {
+                                foreach ($groups as $gid => $group) {
                                     $ccache[$shortname]->groups[$gid] = new stdClass();
-                                    $ccache[$shortname]->groups[$gid]->id   = $gid;
+                                    $ccache[$shortname]->groups[$gid]->id = $gid;
                                     $ccache[$shortname]->groups[$gid]->name = $group->name;
-                                    if (!is_numeric($group->name)) { // only non-numeric names are supported!!!
+                                    if (!is_numeric($group->name)) { // Only non-numeric names are supported!!!
                                         $ccache[$shortname]->groups[$group->name] = new stdClass();
-                                        $ccache[$shortname]->groups[$group->name]->id   = $gid;
+                                        $ccache[$shortname]->groups[$group->name]->id = $gid;
                                         $ccache[$shortname]->groups[$group->name]->name = $group->name;
                                     }
                                 }
                             }
                         }
-                        // group exists?
+                        // Does the group exist?
                         $addgroup = trim($user->{'group'.$i});
-                         if (!array_key_exists($addgroup, $ccache[$shortname]->groups)) {
-                            // if group doesn't exist,  create it
+                        if (!array_key_exists($addgroup, $ccache[$shortname]->groups)) {
+                            // If group doesn't exist, create it.
                             $newgroupdata = new stdClass();
                             $newgroupdata->name = $addgroup;
                             $newgroupdata->courseid = $ccache[$shortname]->id;
                             $newgroupdata->description = '';
                             $gid = groups_create_group($newgroupdata);
-                            if ($gid){
+                            if ($gid) {
                                 $ccache[$shortname]->groups[$addgroup] = new stdClass();
-                                $ccache[$shortname]->groups[$addgroup]->id   = $gid;
+                                $ccache[$shortname]->groups[$addgroup]->id = $gid;
                                 $ccache[$shortname]->groups[$addgroup]->name = $newgroupdata->name;
                             } else {
                                 $upt->track('enrolments', get_string('unknowngroup', 'error', s($addgroup)), 'error');
                                 continue;
                             }
                         }
-                        $gid   = $ccache[$shortname]->groups[$addgroup]->id;
+                        $gid = $ccache[$shortname]->groups[$addgroup]->id;
                         $gname = $ccache[$shortname]->groups[$addgroup]->name;
 
                         try {
                             if (groups_add_member($gid, $user->id)) {
                                 $upt->track('enrolments', get_string('addedtogroup', '', s($gname)));
-                            }  else {
+                            } else {
                                 $upt->track('enrolments', get_string('addedtogroupnot', '', s($gname)), 'error');
                             }
                         } catch (moodle_exception $e) {
@@ -1117,77 +1333,52 @@ if (!empty($cancelled)) {
                             continue;
                         }
                     }
-
-                    // Do we have a department passed?
-                    if (preg_match('/^department\d+$/', $column)) {
-                        $i = substr($column, 10);
-    
-                        if (empty($user->{'department'.$i})) {
-                            continue;
-                        }
-                        $shortname = $user->{'department'.$i};
-                        if (!$department = $DB->get_record('department', array('company' => $company->id,
-                                                                               'shortname' => $shortname))) {
-                            $upt->track('department'.$i, get_string('invaliddepartment', 'block_iomad_company_admin'), 'error');
-                            $upt->track('status', $strusernotaddederror, 'error');
-                            $line[] = get_string('invaliddepartment', 'block_iomad_company_admin');
-                            $errornum++;
-                            $userserrors++;
-                            $erroredusers[] = $line;
-                            continue;
-                        }
-                        // Make sure the user can manage this department.
-                        if (!company::can_manage_department($department->id)) {
-                            $upt->track('department'.$i, get_string('invaliddepartment', 'block_iomad_company_admin'), 'error');
-                            $upt->track('status', $strusernotaddederror, 'error');
-                            $line[] = get_string('invaliddepartment', 'block_iomad_company_admin');
-                            $errornum++;
-                            $userserrors++;
-                            $erroredusers[] = $line;
-                            continue;
-                        }
-    
-                        // Since we got a valid department, remove the user from any default one.  Typically top-level.
-                        if ($department->id != $defaultdepartmentid &&
-                            !empty($defaultdepartmentid)) {
-    
-                            // Remove the user from the default department.
-                            $DB->delete_records('company_users', array('userid' => $user->id, 'companyid' => $company->id, 'departmentid' => $defaultdepartmentid));
-    
-                            // Only want to do this once.
-                            $defaultdepartmentid = 0;
-                        } else {
-                            // Default is the first we were passed.  No longer required.
-                            $defaultdepartmentid = 0;
-                        }
-    
-                        // Add the user to this department.
-                        $company->assign_user_to_company($user->id, $department->id);
-                    }
                 }
             }
 
             // Enrol user into courses that were selected on the form.
-            if (!empty($formdata->selectedcourses)) {
-                // add the user to the courses selected in the upload form.
-                $courseids = array();
-                foreach ($formdata->selectedcourses as $selectedcourse) {
-                    if (is_object($selectedcourse)) {
-                        $selectedcourse = $selectedcourse->id;
+            if (!empty($formdata->currentcourses)) {
+                // Add the user to the courses selected in the upload form.
+                $courseids = [];
+                foreach ($formdata->currentcourses as $currentcourse) {
+                    if (is_object($currentcourse)) {
+                        $currentcourse = $currentcourse->id;
                     }
-                    $courseids[] = $selectedcourse;
+                    $courseids[] = $currentcourse;
                 }
-                company_user::enrol($user, $courseids, $companyid);
                 foreach ($courseids as $courseid) {
-                    $emailcourse = $DB->get_record('course', ['id' => $courseid]);
-                    EmailTemplate::send('user_added_to_course', ['course' => $emailcourse, 'user' => $user, 'due' => $duedate]);
+                    // Are they already enrolled within this tenant?
+                    $coursecontext = context_course::instance($courseid);
+                    if (!is_enrolled($coursecontext, $user->id) ||
+                        !$DB->record_exists(
+                            'local_iomad_track',
+                            [
+                                'userid' => $user->id,
+                                'courseid' => $courserec->id,
+                                'companyid' => $companyid,
+                                'coursecleared' => 0,
+                            ]
+                        )
+                    ) {
+                        // Enrol them.
+                        company_user::enrol($user, $courseid, $companyid);
+                        $emailcourse = $DB->get_record('course', ['id' => $courseid]);
+                        EmailTemplate::send(
+                            'user_added_to_course',
+                            [
+                                'course' => $emailcourse,
+                                'user' => $user,
+                                'due' => $duedate,
+                            ]
+                        );
+                    }
                 }
             }
 
             // Assign any licenses.
             if (!empty($formdata->licenseid)) {
                 $timestamp = time();
-                $licenserecord = (array) $DB->get_record('companylicense', array('id' => $formdata->licenseid));
+                $licenserecord = (array) $DB->get_record('companylicense', ['id' => $formdata->licenseid]);
                 $count = $licenserecord['used'];
                 $numberoflicenses = $licenserecord['allocation'];
 
@@ -1204,8 +1395,9 @@ if (!empty($cancelled)) {
                                              AND licensecourseid = :licensecourseid
                                              AND userid = :userid
                                              AND (isusing = 0 OR timecompleted IS NULL)",
-                                             array('userid' => $user->id, 'licenseid' => $formdata->licenseid,
-                                                  'licensecourseid' => $licensecourse))) {
+                                            ['userid' => $user->id,
+                                             'licenseid' => $formdata->licenseid,
+                                             'licensecourseid' => $licensecourse])) {
                         // Already assigned skip and error.
                         $numlicenseerrors++;
                         continue;
@@ -1216,24 +1408,27 @@ if (!empty($cancelled)) {
                     $count++;
                     $issuedate = time();
                     $userlicid = $DB->insert_record('companylicense_users',
-                                        array('userid' => $user->id,
-                                              'licenseid' => $formdata->licenseid,
-                                              'licensecourseid' => $licensecourse,
-                                              'issuedate' => $issuedate));
+                                        ['userid' => $user->id,
+                                         'licenseid' => $formdata->licenseid,
+                                         'licensecourseid' => $licensecourse,
+                                         'issuedate' => $issuedate]);
 
                     // Create an event.
-                    $eventother = array('licenseid' => $formdata->licenseid,
-                                        'issuedate' => $issuedate,
-                                        'duedate' => $timestamp);
-                    $event = \block_iomad_company_admin\event\user_license_assigned::create(array('context' => context_course::instance($licensecourse),
-                                                                                                  'objectid' => $userlicid,
-                                                                                                  'courseid' => $licensecourse,
-                                                                                                  'userid' => $user->id,
-                                                                                                  'other' => $eventother));
+                    $eventother = [
+                        'licenseid' => $formdata->licenseid,
+                        'issuedate' => $issuedate,
+                        'duedate' => $timestamp,
+                    ];
+                    $event = user_license_assigned::create([
+                        'context' => context_course::instance($licensecourse),
+                        'objectid' => $userlicid,
+                        'courseid' => $licensecourse,
+                        'userid' => $user->id,
+                        'other' => $eventother,
+                    ]);
                     $event->trigger();
                 }
             }
-
 
             // If user was set to have password generated, generate it now, so that it can be downloaded.
             company_user::generate_temporary_password($user, $formdata->sendnewpasswordemails);
@@ -1265,7 +1460,7 @@ if (!empty($cancelled)) {
         if ($optype != UU_UPDATE) {
             echo get_string('userscreated', 'tool_uploaduser').': '.$usersnew.'<br />';
         }
-        if ($optype == UU_UPDATE or $optype == UU_ADD_UPDATE) {
+        if ($optype == UU_UPDATE || $optype == UU_ADD_UPDATE) {
             echo get_string('usersupdated', 'tool_uploaduser').': '.$usersupdated.'<br />';
         }
         if ($allowdeletes) {
@@ -1327,7 +1522,7 @@ while ($fields = $cir->next()) {
 
     if ((!isset($rowcols['username']) || empty($rowcols['username'])) && isset($rowcols['email']) && !empty($rowcols['email'])) {
         // No username given, try to find an existing user via the email address.
-        if ($perfexistinguser = $DB->get_record('user', array('email' => $rowcols['email']))) {
+        if ($perfexistinguser = $DB->get_record('user', ['email' => $rowcols['email']])) {
             $rowcols['username'] = $perfexistinguser->username;
         } else {
             // No existing user matches, generate a new username.
@@ -1342,7 +1537,7 @@ while ($fields = $cir->next()) {
                                              AND cu.companyid = :companyid",
                                             ['username' => $rowcols['username'],
                                              'companyid' => $companyid]);
-    $emailexist    = $DB->record_exists_sql("SELECT DISTINCT u.id FROM {user} u
+    $emailexist = $DB->record_exists_sql("SELECT DISTINCT u.id FROM {user} u
                                              JOIN {company_users} cu
                                              ON (u.id = cu.userid)
                                              WHERE u.email = :email
@@ -1386,7 +1581,7 @@ while ($fields = $cir->next()) {
 
     switch($optype) {
         case UU_ADDNEW:
-            if ($usernameexist || $emailexist ) {
+            if ($usernameexist || ($emailexist && !$CFG->allowaccountssameemail) ) {
                 $rowcols['action'] = 'skipped';
             } else {
                 $rowcols['action'] = 'create';
@@ -1407,9 +1602,9 @@ while ($fields = $cir->next()) {
         case UU_ADD_UPDATE:
             $oldusernameexist = '';
             if (isset($rowcols['oldusername'])) {
-                $oldusernameexist = $DB->record_exists('user', array('username' => $rowcols['oldusername']));
+                $oldusernameexist = $DB->record_exists('user', ['username' => $rowcols['oldusername']]);
             }
-            if ($usernameexist || $emailexist || $oldusernameexist ) {
+            if ($usernameexist || ($emailexist && !$CFG->allowaccountssameemail) || $oldusernameexist ) {
                 $rowcols['action'] = 'update';
             } else {
                 $rowcols['action'] = 'create';
@@ -1419,7 +1614,7 @@ while ($fields = $cir->next()) {
         case UU_UPDATE:
              $oldusernameexist = '';
             if (isset($rowcols['oldusername'])) {
-                $oldusernameexist = $DB->record_exists('user', array('username' => $rowcols['oldusername']));
+                $oldusernameexist = $DB->record_exists('user', ['username' => $rowcols['oldusername']]);
             }
 
             if ($usernameexist || $emailexist || !empty($oldusernameexist)) {
@@ -1492,11 +1687,11 @@ if (in_array('error', $headings)) {
             $table->data[] = $rows;
         }
     }
-    $mform = new admin_uploaduser_form3();
-    $mform->set_data(array('uutype' => $uploadtype));
+    $mform = new company_uploaduser_form3();
+    $mform->set_data(['uutype' => $uploadtype]);
 } else if (empty($contents)) {
-    $mform = new admin_uploaduser_form3();
-    $mform->set_data(array('uutype' => $uploadtype));
+    $mform = new company_uploaduser_form3();
+    $mform->set_data(['uutype' => $uploadtype]);
 } else {
     // Print content.
     foreach ($contents as $content) {
@@ -1526,11 +1721,13 @@ if (in_array('error', $headings)) {
         $countcontent++;
     }
 }
-echo html_writer::tag('div', html_writer::table($table), array('class' => 'flexible-wrap'));
+echo html_writer::tag('div', html_writer::table($table), ['class' => 'flexible-wrap']);
 
 if ($haserror) {
     echo $output->container(get_string('useruploadtype', 'moodle', $choices[$uploadtype]), 'block_iomad_company_admin');
-    echo $output->container(get_string('uploadinvalidpreprocessedcount', 'block_iomad_company_admin', $countcontent), 'block_iomad_company_admin');
+    echo $output->container(
+        get_string('uploadinvalidpreprocessedcount', 'block_iomad_company_admin', $countcontent),
+        'block_iomad_company_admin');
     echo $output->container(get_string('invalidusername', 'moodle'), 'block_iomad_company_admin');
     echo $output->container(get_string('uploadfilecontainerror', 'block_iomad_company_admin'), 'block_iomad_company_admin');
 } else if (empty($contents)) {
@@ -1541,66 +1738,47 @@ if ($haserror) {
     echo $output->container(get_string('uupreprocessedcount', 'block_iomad_company_admin', $countcontent),
                             'block_iomad_company_admin');
 }
-?>
-<script type="text/javascript">
-Y.on('change', submit_form, '#licenseidselector');
- function submit_form() {
-     var nValue = Y.one('#licenseidselector').get('value');
-    $.ajax({
-        type: "GET",
-        url: "<?php echo $CFG->wwwroot; ?>/blocks/iomad_company_admin/js/company_user_create_form.ajax.php?licenseid="+nValue,
-        datatype: "HTML",
-        success: function(response){
-            $("#licensecourseselector").html(response);
-        }
-    });
-    $.ajax({
-        type: "GET",
-        url: "<?php echo $CFG->wwwroot; ?>/blocks/iomad_company_admin/js/company_user_create_form-license.ajax.php?licenseid="+nValue,
-        datatype: "HTML",
-        success: function(response){
-            $("#licensedetails").html(response);
-        }
-    });
-    $.ajax({
-        type: "GET",
-        url: "<?php echo $CFG->wwwroot; ?>/blocks/iomad_company_admin/js/company_user_create_form-license-courses.ajax.php?licenseid="+nValue,
-        datatype: "HTML",
-        success: function(response){
-            $("#licensecoursescontainer")[0].style.display = response;
-        }
-    });
- }
-</script>
-<?php
 
-
+// Display the form.
 $mform->display();
+
+// Display the footer.
 echo $output->footer();
 die;
 
-/*
-* Utility functions and classes
-*/
+// Utility functions and classes.
 
+/**
+ * Upload progress tracker class
+ *
+ * @package block_iomad_company_admin
+ */
 class uu_progress_tracker {
+
+    /** @var array row information */
     public $_row;
-    public $columns = array('status',
-                            'line',
-                            'id',
-                            'username',
-                            'firstname',
-                            'lastname',
-                            'email',
-                            'password',
-                            'auth',
-                            'enrolments',
-                            'deleted',
-                            'department');
 
-    public function __construct() {
-    }
+    /** @var array output columns */
+    public $columns = [
+        'status',
+        'line',
+        'id',
+        'username',
+        'firstname',
+        'lastname',
+        'email',
+        'password',
+        'auth',
+        'enrolments',
+        'deleted',
+        'department',
+    ];
 
+    /**
+     * Initialisation function
+     *
+     * @return void
+     */
     public function init() {
         $ci = 0;
         echo '<table id="uuresults" class="generaltable boxaligncenter flexible-wrap" summary="'.
@@ -1622,11 +1800,16 @@ class uu_progress_tracker {
         $this->_row = null;
     }
 
+    /**
+     * Write the current row
+     *
+     * @return void
+     */
     public function flush() {
-        if (empty($this->_row) or empty($this->_row['line']['normal'])) {
-            $this->_row = array();
+        if (empty($this->_row) || empty($this->_row['line']['normal'])) {
+            $this->_row = [];
             foreach ($this->columns as $col) {
-                $this->_row[$col] = array('normal' => '', 'info' => '', 'warning' => '', 'error' => '');
+                $this->_row[$col] = ['normal' => '', 'info' => '', 'warning' => '', 'error' => ''];
             }
             return;
         }
@@ -1654,10 +1837,19 @@ class uu_progress_tracker {
         }
         echo '</tr>';
         foreach ($this->columns as $col) {
-            $this->_row[$col] = array('normal' => '', 'info' => '', 'warning' => '', 'error' => '');
+            $this->_row[$col] = ['normal' => '', 'info' => '', 'warning' => '', 'error' => ''];
         }
     }
 
+    /**
+     * Track errors
+     *
+     * @param string $col
+     * @param string $msg
+     * @param string $level
+     * @param boolean $merge
+     * @return void
+     */
     public function track($col, $msg, $level= 'normal', $merge=true) {
         if (empty($this->_row)) {
             $this->flush(); // Init arrays.
@@ -1676,6 +1868,11 @@ class uu_progress_tracker {
         }
     }
 
+    /**
+     * Close the upload table
+     *
+     * @return void
+     */
     public function close() {
         echo '</table>';
     }
@@ -1684,6 +1881,8 @@ class uu_progress_tracker {
 /**
  * Validation callback function - verified the column line of csv file.
  * Converts column names to lowercase too.
+ *
+ * @package block_iomad_company_admin
  */
 function validate_user_upload_columns(&$columns) {
     global $stdfields, $prffields;
@@ -1714,6 +1913,8 @@ function validate_user_upload_columns(&$columns) {
 /**
  * Increments username - increments trailing number or adds it if not present.
  * Varifies that the new username does not exist yet
+ *
+ * @package block_iomad_company_admin
  * @param string $username
  * @return incremented username which does not exist yet
  */
@@ -1726,7 +1927,7 @@ function increment_username($username, $mnethostid) {
         $username = $matches[1][0].($matches[2][0] + 1);
     }
 
-    if ($DB->record_exists('user', array('username' => $username, 'mnethostid' => $mnethostid))) {
+    if ($DB->record_exists('user', ['username' => $username, 'mnethostid' => $mnethostid])) {
         return increment_username($username, $mnethostid);
     } else {
         return $username;
@@ -1735,6 +1936,8 @@ function increment_username($username, $mnethostid) {
 
 /**
  * Check if default field contains templates and apply them.
+ *
+ * @package block_iomad_company_admin
  * @param string template - potential tempalte string
  * @param object user object- we need username, firstname and lastname
  * @return string field value
@@ -1745,15 +1948,15 @@ function process_template($template, $user) {
     }
 
     // Very very ugly hack!
-    global $template_globals;
-    $template_globals = new stdClass();
-    $template_globals->username  = isset($user->username)  ? $user->username  : '';
-    $template_globals->firstname = isset($user->firstname) ? $user->firstname : '';
-    $template_globals->lastname  = isset($user->lastname)  ? $user->lastname  : '';
+    global $templateglobals;
+    $templateglobals = new stdClass();
+    $templateglobals->username = isset($user->username) ? $user->username : '';
+    $templateglobals->firstname = isset($user->firstname) ? $user->firstname : '';
+    $templateglobals->lastname = isset($user->lastname) ? $user->lastname : '';
 
     $result = preg_replace_callback('/(?<!%)%([+-~])?(\d)*([flu])/', 'process_template_callback', $template);
 
-    $template_globals = null;
+    $templateglobals = null;
 
     if (is_null($result)) {
         return $template; // Error during regex processing??
@@ -1764,21 +1967,23 @@ function process_template($template, $user) {
 
 /**
  * Internal callback function.
+ *
+ * @package block_iomad_company_admin
  */
 function process_template_callback($block) {
-    global $template_globals;
+    global $templateglobals;
     $textlib = core_text::get_instance();
     $repl = $block[0];
 
     switch ($block[3]) {
         case 'u':
-            $repl = $template_globals->username;
+            $repl = $templateglobals->username;
         break;
         case 'f':
-            $repl = $template_globals->firstname;
+            $repl = $templateglobals->firstname;
         break;
         case 'l':
-            $repl = $template_globals->lastname;
+            $repl = $templateglobals->lastname;
         break;
     }
     switch ($block[1]) {
@@ -1801,13 +2006,14 @@ function process_template_callback($block) {
 
 /**
  * Returns list of auth plugins that are enabled and known to work.
+ *
+ * @package block_iomad_company_admin
  */
 function uu_allowed_auths() {
     global $CFG;
 
     // Only following plugins are guaranteed to work properly.
-    // TODO: add support for more plugins in 2.0!
-    $whitelist = array('manual', 'nologin', 'none', 'email');
+    $whitelist = ['manual', 'nologin', 'none', 'email'];
     $plugins = get_enabled_auth_plugins();
     $choices = array();
     foreach ($plugins as $plugin) {
@@ -1819,6 +2025,8 @@ function uu_allowed_auths() {
 
 /**
  * Returns list of roles that are assignable in courses
+ *
+ * @package block_iomad_company_admin
  */
 function uu_allowed_roles() {
     // Let's cheat a bit, frontpage is guaranteed to exist and has the same list of roles ;-).
@@ -1826,15 +2034,20 @@ function uu_allowed_roles() {
     return array_reverse($roles, true);
 }
 
+/**
+ * Returns cached list roles that are assignable in courses
+ *
+ * @package block_iomad_company_admin
+ */
 function uu_allowed_roles_cache() {
     $allowedroles = get_assignable_roles(context_course::instance(SITEID), ROLENAME_SHORT);
     foreach ($allowedroles as $rid => $rname) {
         $rolecache[$rid] = new stdClass();
-        $rolecache[$rid]->id   = $rid;
+        $rolecache[$rid]->id = $rid;
         $rolecache[$rid]->name = $rname;
         if (!is_numeric($rname)) { // Only non-numeric shortnames are supported!!!
             $rolecache[$rname] = new stdClass();
-            $rolecache[$rname]->id   = $rid;
+            $rolecache[$rname]->id = $rid;
             $rolecache[$rname]->name = $rname;
         }
     }

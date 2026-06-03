@@ -15,6 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
+ * IOMAD my courses block renderer
  * @package   block_mycourses
  * @copyright 2021 Derick Turner
  * @author    Derick Turner
@@ -22,10 +23,8 @@
  */
 
 namespace block_mycourses\output;
-defined('MOODLE_INTERNAL') || die;
 
 use plugin_renderer_base;
-use renderable;
 
 /**
  * mycourses block renderer

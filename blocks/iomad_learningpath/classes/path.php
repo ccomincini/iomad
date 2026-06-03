@@ -25,6 +25,9 @@
 
 namespace block_iomad_learningpath;
 
+use core_course\external\course_summary_exporter;
+use core_course_list_element;
+
 /**
  * Class definition
  */
@@ -67,13 +70,19 @@ class path {
         // Calculate overall progress for group.
         $cumulativeprogress = 0;
         $completioncoursecount = 0;
+        $completedcourses = 0;
 
-        $sql = 'SELECT c.id courseid, c.shortname shortname, c.fullname fullname, c.summary summary, lpc.*
-            FROM {iomad_learningpathcourse} lpc JOIN {course} c ON lpc.course = c.id
+        $sql = "SELECT c.id AS courseid,
+                c.shortname,
+                c.fullname,
+                c.summary, lpc.*
+            FROM {iomad_learningpathcourse} lpc
+            JOIN {course} c ON lpc.course = c.id
             WHERE lpc.path = :pathid
             AND lpc.groupid = :groupid
-            ORDER BY lpc.sequence';
+            ORDER BY lpc.sequence";
         $courses = $DB->get_records_sql($sql, ['pathid' => $pathid, 'groupid' => $groupid]);
+        $totalcourses = count($courses);
 
         // Handle sequencing if required.
         $first = true;
@@ -86,6 +95,13 @@ class path {
             $progress = \core_completion\progress::get_course_progress_percentage($fullcourse);
             $course->hasprogress = $progress !== null;
             $course->progresspercent = $course->hasprogress ? $progress : 0;
+            $course->zeroprogress = false;
+            if ($progress == 0) {
+                $course->zeroprogress = true;
+            }
+            if ($progress == 100) {
+                $completedcourses++;
+            }
 
             // Deal with sequencing if we have to.
             if ($first || !$sequenced) {
@@ -96,7 +112,12 @@ class path {
                     $course->available = true;
                 } else {
                     $course->available = false;
-                    $course->prerequisite = $previouscourse->fullname;
+                    $course->hasprogress = false;
+                    if (empty($previouscourse->prerequisite)) {
+                        $course->prerequisite = $previouscourse->fullname;
+                    } else {
+                        $course->prerequisite = $previouscourse->prerequisite;
+                    }
                 }
             }
 
@@ -118,13 +139,13 @@ class path {
         }
 
         // Calculate overall progress for group.
-        if ($completioncoursecount) {
-            $groupprogress = round($cumulativeprogress / $completioncoursecount);
+        if ($totalcourses) {
+            $groupprogress = round(($completedcourses / $totalcourses) * 100);
         } else {
             $groupprogress = null;
         }
 
-        return [$courses, $groupprogress];
+        return [$courses, $groupprogress, $completedcourses];
     }
 
     /**
@@ -139,21 +160,29 @@ class path {
         // Calculate overall progress for path.
         $cumulativeprogress = 0;
         $completiongroupcount = 0;
+        $totalcourses = 0;
+        $completedcourses = 0;
 
         $groups = $DB->get_records('iomad_learningpathgroup', ['learningpath' => $pathid]);
         foreach ($groups as $group) {
-            list($courses, $progress) = $this->get_courselist($pathid, $group->id, $group->sequence);
+            [$courses, $progress, $completedcount] = $this->get_courselist($pathid, $group->id, $group->sequence);
             $group->progress = $progress !== null ? $progress : 0;
             $group->courses = array_values($courses);
+            $totalcourses += count($courses);
+            $completedcourses += $completedcount;
             if ($progress !== null) {
                 $cumulativeprogress += $progress;
                 $completiongroupcount++;
             }
+            $group->zeroprogress = false;
+            if (empty($progress)) {
+                $group->zeroprogress = true;
+            }
         }
 
         // Calcultate overall progress for path.
-        if ($completiongroupcount) {
-            $pathprogress = round($cumulativeprogress / $completiongroupcount);
+        if ($totalcourses) {
+            $pathprogress = round(($completedcourses / $totalcourses) * 100) ;
         } else {
             $pathprogress = null;
         }
@@ -185,6 +214,10 @@ class path {
             list($groups, $pathprogress) = $this->get_groups($path->id);
             $path->groups = array_values($groups);
             $path->progress = $pathprogress !== null ? $pathprogress : 0;
+            $path->zeroprogress = false;
+            if ((empty($pathprogress))) {
+                $path->zeroprogress = true;
+            }
         }
 
         return $paths;
@@ -234,20 +267,14 @@ class path {
      * @return mixed url or false if no image
      */
     public function get_course_image_url($courseid) {
-        global $OUTPUT;
+        global $DB, $OUTPUT;
 
-        $fs = get_file_storage();
-
-        $context = \context_course::instance($courseid);
-        $files = $fs->get_area_files($context->id, 'course', 'overviewfiles', 0);
-        foreach ($files as $file) {
-            if ($file->is_valid_image()) {
-                return \moodle_url::make_pluginfile_url($file->get_contextid(), $file->get_component(), $file->get_filearea(),
-                    null, $file->get_filepath(), $file->get_filename());
-            }
+        $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
+        $courseobj = new core_course_list_element($course);
+        $imageurl = course_summary_exporter::get_course_image($courseobj);
+        if (empty($imageurl)) {
+            $imageurl = $OUTPUT->get_generated_image_for_id($course->id);
         }
-
-        // No image defined, so...
-        return $OUTPUT->image_url('courseimage', 'block_iomad_learningpath')->out();
+        return $imageurl;
     }
 }

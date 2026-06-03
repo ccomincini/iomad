@@ -15,7 +15,8 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Base class for the table used by a {@link quiz_attempts_report}.
+ * IOMAD microlearning block thread import table class
+ *
  *
  * @package   block_iomad_microlearning
  * @copyright 2021 Derick Turner
@@ -25,17 +26,18 @@
 
 namespace block_iomad_microlearning\tables;
 
-use \table_sql;
-use \moodle_url;
 use context_system;
+use html_writer;
 use iomad;
-
-defined('MOODLE_INTERNAL') || die();
+use moodle_url;
+use table_sql;
 
 /**
- * Base class for the table used by block/iomad_microlearning/threads.php
+ * IOMAD microlearning block thread import table class
  *
- * @copyright 2019 E-Learn Design Ltd. (https://www.e-learndesign.co.uk)
+ *
+ * @package   block_iomad_microlearning
+ * @copyright 2021 Derick Turner
  * @author    Derick Turner
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -47,7 +49,6 @@ class thread_import_table extends table_sql {
      * @return string HTML content to go inside the td.
      */
     public function col_name($row) {
-        global $output;
 
         return format_string($row->name, true, 1);
     }
@@ -58,7 +59,6 @@ class thread_import_table extends table_sql {
      * @return string HTML content to go inside the td.
      */
     public function col_companyname($row) {
-        global $output;
 
         return format_string($row->companyname, true, 1);
     }
@@ -69,7 +69,6 @@ class thread_import_table extends table_sql {
      * @return string HTML content to go inside the td.
      */
     public function col_active($row) {
-        global $CFG;
 
         if (empty($row->active)) {
             return get_string('no');
@@ -93,6 +92,12 @@ class thread_import_table extends table_sql {
         }
     }
 
+    /**
+     * Display the start date as a string
+     *
+     * @param [type] $row
+     * @return void
+     */
     public function col_startdate($row) {
         global $CFG;
 
@@ -115,12 +120,18 @@ class thread_import_table extends table_sql {
             return;
         }
 
-        $html = "";
-        $importlink = new moodle_url('thread_import.php', array('importid' => $row->id, 'sesskey' => sesskey()));
+        $importlink = new moodle_url('thread_import.php', ['importid' => $row->id, 'sesskey' => sesskey()]);
         if (iomad::has_capability('block/iomad_microlearning:import_threads', $companycontext)) {
-            $html .= '<a class="btn btn-primary" href="' . $importlink . '" title="' . get_string('import') .'">' . get_string('import') . '</a>';
+            return html_writer::tag(
+                'a',
+                get_string('import'),
+                [
+                    'class' => "btn btn-primary",
+                    'href' => $importlink,
+                    'title' => get_string('import'),
+                ]);
         }
 
-        return $html;
+        return;
     }
 }

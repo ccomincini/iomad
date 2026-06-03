@@ -33,7 +33,7 @@ abstract class company_course_selector_base extends course_selector_base {
     protected $companycontext;
 
     //overridden to include the sortorder field
-    protected $requiredfields = array('id', 'fullname', 'sortorder');
+    protected $requiredfields = array('id', 'fullname', 'sortorder', 'shortname');
 
     public function __construct($name, $options) {
         $this->companyid  = $options['companyid'];
@@ -63,7 +63,7 @@ abstract class company_course_selector_base extends course_selector_base {
                 $context = context_course::instance($id);
                 if (count_enrolled_users($context) > 0) {
                     $courselist[ $id ]->hasenrollments = true;
-                    $courselist[ $id ]->fullname = $course->fullname . "(" . $strhasenrollments .")";
+                    $courselist[ $id ]->fullname = $course->fullname . " (" . $strhasenrollments .")";
                     $this->hasenrollments = true;
                 }
             }
@@ -74,7 +74,7 @@ abstract class company_course_selector_base extends course_selector_base {
                 if ($companygroup = company::get_company_group($this->companyid, $id)) {
                     if ($DB->get_records('groups_members', array('groupid' => $companygroup->id))) {
                         $courselist[ $id ]->hasenrollments = true;
-                        $courselist[ $id ]->fullname = $course->fullname . "(" . $strsharedhasenrollments .")";
+                        $courselist[ $id ]->fullname = $course->fullname . " (" . $strsharedhasenrollments .")";
                         $this->hasenrollments = true;
                     }
                 }
@@ -91,7 +91,7 @@ abstract class company_course_selector_base extends course_selector_base {
                 $courseid = $DB->get_field('companylicense_users', 'licensecourseid', ['id' => $id]);
             }
             if ($DB->get_record('course', ['id' => $courseid, 'visible' => 0])) {
-                $allcourses[$id]->fullname = $course->fullname . "(" . get_string('hidden', 'badges') . ")";
+                $allcourses[$id]->fullname = $course->fullname . " (" . get_string('hidden', 'badges') . ")";
             }
         }
     }
@@ -110,6 +110,13 @@ abstract class company_course_selector_base extends course_selector_base {
                                                               'licensecourseid' => $course->id))) {
                 $licensecourses[$id]->fullname = $course->fullname . '*';
             }
+        }
+    }
+
+    protected function process_shortname(&$allcourses) {
+
+        foreach ($allcourses as $id => $course) {
+            $allcourses[$id]->fullname = $course->fullname . " (" . $course->shortname . ")";
         }
     }
 }
@@ -249,6 +256,7 @@ class current_company_course_selector extends company_course_selector_base {
         }
 
         // Have any of the courses got enrollments?
+        $this->process_shortname($availablecourses);
         $this->process_enrollments($availablecourses);
         $this->process_hidden_courses($availablecourses);
 
@@ -367,7 +375,7 @@ class all_department_course_selector extends company_course_selector_base {
         $availablecourses = $DB->get_records_sql($fields . $sql . $order, $params);
 
         // Find global courses.
-        $globalcoursesql = " FROM {course} c WHERE c.id !='1'
+        $globalcoursesql = " FROM {course} c WHERE c.id <>'1'
                              AND c.id IN
                               (SELECT pc.courseid
                                FROM {iomad_courses} pc
@@ -380,6 +388,7 @@ class all_department_course_selector extends company_course_selector_base {
         if (empty($availablecourses) && empty($globalcourses)) {
             return array();
         }
+        $this->process_shortname($availablecourses);
         $this->process_hidden_courses($availablecourses);
 
         // Set up empty return.
@@ -453,8 +462,10 @@ class potential_company_course_selector extends company_course_selector_base {
         if ($this->departmentid != 0) {
             // Eemove courses for the current department.
             $departmentcondition = " AND c.id NOT IN (
-                                                      SELECT courseid FROM {company_course}
-                                                      WHERE departmentid = ($this->departmentid)) ";
+                                         SELECT courseid
+                                         FROM {company_course}
+                                         WHERE departmentid = ($this->departmentid)
+                                     ) ";
         } else {
             $departmentcondition = "";
         }
@@ -482,14 +493,14 @@ class potential_company_course_selector extends company_course_selector_base {
                 $sharedsql .= " AND c.id NOT IN (SELECT mcc.courseid FROM {company_course} mcc
                                                  LEFT JOIN {iomad_courses} mic
                                                  ON (mcc.courseid = mic.courseid)
-                                                 WHERE mic.shared!=2 AND mcc.companyid != :companyid) ";
+                                                 WHERE mic.shared <> 2 AND mcc.companyid <> :companyid) ";
             } else {
                 $company = new company($this->companyid);
                 $params['parentid'] = $company->get_parentid();
                 $sharedsql .= " AND c.id NOT IN (SELECT mcc.courseid FROM {company_course} mcc
                                                  LEFT JOIN {iomad_courses} mic
                                                  ON (mcc.courseid = mic.courseid)
-                                                 WHERE mic.shared!=2 AND mcc.companyid != :companyid)
+                                                 WHERE mic.shared <> 2 AND mcc.companyid <> :companyid)
                                 AND c.id IN (SELECT courseid FROM {company_course}
                                              WHERE companyid = :parentid) ";
             }
@@ -513,12 +524,12 @@ class potential_company_course_selector extends company_course_selector_base {
 
         $sqldistinct = " FROM {course} c
                         WHERE $wherecondition
-                        AND c.id != :siteid
+                        AND c.id <> :siteid
                         $departmentcondition $sharedsql";
 
         $sql = " FROM {course} c
                 WHERE $wherecondition
-                      AND c.id != :siteid
+                      AND c.id <> :siteid
                       $departmentcondition $sharedsql";
 
         $order = ' ORDER BY c.fullname ASC';
@@ -544,6 +555,7 @@ class potential_company_course_selector extends company_course_selector_base {
         }
 
         // Have any of the courses got enrollments?
+        $this->process_shortname($availablecourses);
         $this->process_enrollments($availablecourses);
         $this->process_hidden_courses($availablecourses);
 
@@ -622,13 +634,13 @@ class potential_subdepartment_course_selector extends company_course_selector_ba
                         {company_course} cc
                         WHERE $wherecondition
                         AND cc.courseid = c.id
-                        AND c.id != :siteid
+                        AND c.id <> :siteid
                         $licensesql
                         $departmentselect";
 
         $sql = " FROM {course} c
                 WHERE $wherecondition
-                      AND c.id != :siteid
+                      AND c.id <> :siteid
                       AND NOT EXISTS (SELECT NULL FROM {company_course} WHERE courseid = c.id)";
 
         if (!empty($this->showopenshared)) {
@@ -636,7 +648,7 @@ class potential_subdepartment_course_selector extends company_course_selector_ba
                             {iomad_courses} ic
                             WHERE $wherecondition
                             AND ic.courseid = c.id
-                            AND c.id != :siteid
+                            AND c.id <> :siteid
                             AND ic.shared = 1
                             $licensesql";
         }
@@ -667,6 +679,7 @@ class potential_subdepartment_course_selector extends company_course_selector_ba
         }
 
         // Have any of the courses got enrollments?
+        $this->process_shortname($availablecourses);
         $this->process_enrollments($sanitisedcourses);
         $this->process_hidden_courses($availablecourses);
 
@@ -714,6 +727,7 @@ class any_course_selector extends company_course_selector_base {
         if (empty($availablecourses)) {
             return array();
         }
+        $this->process_shortname($availablecourses);
         $this->process_hidden_courses($availablecourses);
 
         if ($search) {
@@ -762,41 +776,42 @@ class current_user_course_selector extends company_course_selector_base {
     public function find_courses($search) {
         global $DB;
 
+        list($wherecondition, $params) = $this->search_sql($search, 'c');
+
         if ($search) {
-            $groupname = get_string('usercoursesmatching', 'block_iomad_company_admin', $search);
+            $groupname = get_string('coursesmatching', 'block_iomad_company_admin', $search);
         } else {
             $groupname = get_string('usercourses', 'block_iomad_company_admin');
         }
+        $params['userid'] = $this->user->id;
+        $params['companyid'] = $this->companyid;
 
-        if ($coursearray = $DB->get_records_sql("SELECT DISTINCT c.* 
-                                                 FROM {course} c
-                                                 JOIN {enrol} e ON (c.id = e.courseid)
-                                                 JOIN {user_enrolments} ue ON (e.id = ue.enrolid)
-                                                 JOIN {local_iomad_track} lit ON (e.courseid = lit.courseid AND c.id = lit.courseid AND ue.userid=lit.userid AND ue.timestart = lit.timeenrolled)
-                                                 WHERE lit.userid = :userid
-                                                 AND lit.companyid = :companyid",
-                                                ['userid' => $this->user->id ,
-                                                 'companyid' => $this->companyid])) {
+        if ($coursearray = $DB->get_records_sql(
+            "SELECT DISTINCT c.*
+             FROM {course} c
+             JOIN {enrol} e ON (c.id = e.courseid)
+             JOIN {user_enrolments} ue ON (e.id = ue.enrolid)
+             JOIN {local_iomad_track} lit ON (
+                 e.courseid = lit.courseid
+                 AND c.id = lit.courseid
+                 AND ue.userid=lit.userid
+                 AND ue.timestart = lit.timeenrolled
+             )
+             WHERE lit.userid = :userid
+             AND lit.companyid = :companyid
+             AND $wherecondition",
+            $params)) {
+
             // Don't want license courses.
             foreach ($coursearray as $courseid => $coursedata) {
                 if ($DB->get_record('iomad_courses', array('courseid' => $courseid, 'licensed' => 1))) {
                     unset($coursearray[$courseid]);
                 }
             }
+            $this->process_shortname($coursearray);
             $this->process_hidden_courses($coursearray);
 
-            // Deal with any search.
-            if (empty($search)) {
-                return array($groupname => $coursearray);
-            } else {
-                // Got to do the search thing.
-                foreach ($coursearray as $courseid => $coursedata) {
-                    if (!strpos($search, $coursedata->fullname)) {
-                        unset($coursearray[$courseid]);
-                    }
-                }
-                return array($groupname => $coursearray);
-            }
+            return array($groupname => $coursearray);
         } else {
             return array();
         }
@@ -900,45 +915,33 @@ class potential_user_course_selector extends company_course_selector_base {
         $distinctfields      = 'SELECT DISTINCT ' . $this->required_fields_sql('c');
         $distinctcountfields = 'SELECT COUNT(DISTINCT c.id) ';
 
-        $sql = " FROM {course} c,
-                        {company_course} cc
-                        WHERE cc.courseid = c.id
-                        AND $wherecondition
-                        $companysql
-                        $departmentcondition
-                        $currentcoursesql
-                        $licensesql";
+        $sql = " FROM {course} c
+                JOIN {company_course} cc ON (c.id = cc.courseid)
+                WHERE $wherecondition
+                $companysql
+                $departmentcondition
+                $currentcoursesql
+                $licensesql";
 
         // Deal with shared courses.
         if ($this->shared) {
-            if (!$this->licenses) {
-                $sharedsql = " FROM {course} c
-                               INNER JOIN {iomad_courses} pc
-                               ON c.id=pc.courseid
-                               WHERE $wherecondition
-                               AND pc.shared=1
-                               AND pc.licensed != 1
-                               $currentcoursesql";
-                $partialsharedsql = " FROM {course} c
-                                    WHERE $wherecondition
-                                    AND c.id IN (SELECT pc.courseid FROM {iomad_courses} pc
-                                    INNER JOIN {company_shared_courses} csc ON pc.courseid=csc.courseid
-                                       WHERE pc.shared=2 AND pc.licensed !=1 AND csc.companyid = :companyid)
-                                       $currentcoursesql";
-            } else {
-                $sharedsql = " FROM {course} c
-                               INNER JOIN {iomad_courses} pc ON c.id=pc.courseid
-                               WHERE $wherecondition
-                               AND pc.shared=1
-                               $currentcoursesql";
-                $partialsharedsql = " FROM {course} c
-                                      WHERE $wherecondition
-                                      AND c.id IN 
-                                         (SELECT pc.courseid WHERE {iomad_courses} pc
-                                          INNER JOIN {company_shared_courses} csc ON pc.courseid=csc.courseid
-                                          WHERE pc.shared=2 AND csc.companyid = :companyid)
-                                      $currentcoursesql";
-            }
+            $sharedsql = " FROM {course} c
+                           JOIN {iomad_courses} pc ON c.id=pc.courseid
+                           WHERE $wherecondition
+                           AND pc.shared = 1
+                           AND pc.licensed <> 1
+                           $currentcoursesql";
+            $partialsharedsql = " FROM {course} c
+                                WHERE $wherecondition
+                                AND c.id IN (
+                                    SELECT pc.courseid
+                                    FROM {iomad_courses} pc
+                                    JOIN {company_shared_courses} csc ON pc.courseid=csc.courseid
+                                    WHERE pc.shared = 2
+                                    AND pc.licensed <> 1
+                                    AND csc.companyid = :companyid
+                                )
+                                $currentcoursesql";
         } else {
             $sharedsql = " FROM {course} c WHERE 1 = 2";
             $partialsharedsql = " FROM {course} c WHERE 1 = 2";
@@ -946,6 +949,7 @@ class potential_user_course_selector extends company_course_selector_base {
         }
 
         $order = ' ORDER BY c.fullname ASC';
+
         if (!$this->is_validating()) {
             $potentialmemberscount = $DB->count_records_sql($countfields . $sql, $params) +
             $DB->count_records_sql($countfields . $sharedsql, $params) +
@@ -954,6 +958,7 @@ class potential_user_course_selector extends company_course_selector_base {
                 return $this->too_many_results($search, $potentialmemberscount);
             }
         }
+
         $availablecourses = $DB->get_records_sql($fields . $sql . $order, $params) +
         $DB->get_records_sql($fields . $sharedsql . $order, $params) +
         $DB->get_records_sql($fields . $partialsharedsql . $order, $params);
@@ -961,6 +966,7 @@ class potential_user_course_selector extends company_course_selector_base {
         if (empty($availablecourses)) {
             return array();
         }
+        $this->process_shortname($availablecourses);
         $this->process_hidden_courses($availablecourses);
 
         if ($search) {
@@ -1021,7 +1027,7 @@ class current_user_license_course_selector extends company_course_selector_base 
         $params['userid'] = $this->user->id;
         $params['licenseid'] = $this->licenseid;
 
-        $fields      = 'SELECT clu.id, c.fullname ';
+        $fields      = 'SELECT clu.id, ' . $this->required_fields_sql('c');
         $countfields = 'SELECT COUNT(clu.id)';
 
         $sql = " FROM {course} c,
@@ -1046,6 +1052,7 @@ class current_user_license_course_selector extends company_course_selector_base 
         if (empty($availablecourses)) {
             return array();
         }
+        $this->process_shortname($availablecourses);
         $this->process_license_allocations($availablecourses, $this->user->id);
         $this->process_hidden_courses($availablecourses, true);
 
@@ -1250,6 +1257,7 @@ class potential_user_license_course_selector extends company_course_selector_bas
         if (empty($availablecourses)) {
             return array();
         }
+        $this->process_shortname($availablecourses);
         $this->process_hidden_courses($availablecourses);
 
         if ($search) {

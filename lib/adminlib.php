@@ -3708,11 +3708,14 @@ class admin_setting_configmultiselect extends admin_setting_configselect {
         if (!is_array($data)) {
             return ''; //ignore it
         }
-        if (!$this->load_choices() or empty($this->choices)) {
-            return '';
-        }
 
         unset($data['xxxxx']);
+
+        // Only reject when the caller actually supplied a value
+        // and there is no valid choices to validate against.
+        if (!empty($data) && (!$this->load_choices() || empty($this->choices))) {
+            return '';
+        }
 
         $save = array();
         foreach ($data as $value) {
@@ -10559,13 +10562,13 @@ class admin_setting_configcolourpicker extends admin_setting {
             return $data;
         } else if (in_array(strtolower($data), $colornames)) {
             return $data;
-        } else if (preg_match('/rgb\(\d{0,3}%?\, ?\d{0,3}%?, ?\d{0,3}%?\)/i', $data)) {
+        } else if (preg_match('/^rgb\(\d{0,3}%?\, ?\d{0,3}%?, ?\d{0,3}%?\)$/i', $data)) {
             return $data;
-        } else if (preg_match('/rgba\(\d{0,3}%?\, ?\d{0,3}%?, ?\d{0,3}%?\, ?\d(\.\d)?\)/i', $data)) {
+        } else if (preg_match('/^rgba\(\d{0,3}%?\, ?\d{0,3}%?, ?\d{0,3}%?\, ?\d(\.\d)?\)$/i', $data)) {
             return $data;
-        } else if (preg_match('/hsl\(\d{0,3}\, ?\d{0,3}%, ?\d{0,3}%\)/i', $data)) {
+        } else if (preg_match('/^hsl\(\d{0,3}\, ?\d{0,3}%, ?\d{0,3}%\)$/i', $data)) {
             return $data;
-        } else if (preg_match('/hsla\(\d{0,3}\, ?\d{0,3}%,\d{0,3}%\, ?\d(\.\d)?\)/i', $data)) {
+        } else if (preg_match('/^hsla\(\d{0,3}\, ?\d{0,3}%, ?\d{0,3}%\, ?\d(\.\d)?\)$/i', $data)) {
             return $data;
         } else if (($data == 'transparent') || ($data == 'currentColor') || ($data == 'inherit')) {
             return $data;

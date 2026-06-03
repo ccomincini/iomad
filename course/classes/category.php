@@ -28,7 +28,6 @@ use core\exception\moodle_exception;
 // IOMAD
 require_once($CFG->dirroot.'/local/iomad/lib/iomad.php');
 
-
 /**
  * Class to store, cache, render and manage course category
  *
@@ -756,8 +755,6 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
      * @return mixed
      */
     protected static function get_tree($id) {
-
-        // IOMAD Need to filter here.
         $all = self::get_cached_cat_tree();
         if (is_null($all) || !isset($all[$id])) {
             // Could not get or rebuild the tree, or requested a non-existant ID.
@@ -779,7 +776,6 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
      * @throws moodle_exception
      */
     private static function get_cached_cat_tree(): ?array {
-        // IOMAD Need to filter here.
         $coursecattreecache = cache::make('core', 'coursecattree');
         $all = $coursecattreecache->get('all');
         if ($all !== false) {
@@ -1219,6 +1215,11 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
             }
         }
 
+        // IOMAD - Filter the result.
+        if (!PHPUNIT_TEST) {
+            $list = iomad::iomad_filter_courses($list);
+        }
+
         return $list;
     }
 
@@ -1349,14 +1350,9 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
         } else {
             $sortfields = array('sortorder' => 1);
         }
-        $limit = null;
-        if (!empty($options['limit']) && (int)$options['limit']) {
-            $limit = (int)$options['limit'];
-        }
-        $offset = 0;
-        if (!empty($options['offset']) && (int)$options['offset']) {
-            $offset = (int)$options['offset'];
-        }
+
+        $offset = !empty($options['offset']) && (int) $options['offset'] ? (int) $options['offset'] : 0;
+        $limit = !empty($options['limit']) && (int) $options['limit'] ? (int) $options['limit'] : null;
 
         // First retrieve list of user-visible and sorted children ids from cache.
         $sortedids = $coursecatcache->get('c'. $this->id. ':'.  serialize($sortfields));
@@ -1602,8 +1598,9 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
      */
     public static function search_courses($search, $options = array(), $requiredcapabilities = array()) {
         global $DB;
-        $offset = !empty($options['offset']) ? $options['offset'] : 0;
-        $limit = !empty($options['limit']) ? $options['limit'] : null;
+
+        $offset = !empty($options['offset']) && (int) $options['offset'] ? (int) $options['offset'] : 0;
+        $limit = !empty($options['limit']) && (int) $options['limit'] ? (int) $options['limit'] : null;
         $sortfields = !empty($options['sort']) ? $options['sort'] : array('sortorder' => 1);
 
         $coursecatcache = cache::make('core', 'coursecat');
@@ -1654,11 +1651,6 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
                 }
             }
 
-            // IOMAD - Filter the result.
-            if (!PHPUNIT_TEST) {
-                $courses = iomad::iomad_filter_courses($courses);
-            }
-
             return $courses;
         }
 
@@ -1695,7 +1687,7 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
                 $requiredcapabilities, $searchcond, $searchcondparams);
             self::sort_records($courselist, $sortfields);
 
-            // IOMAD: strip out courses user shouldn't see.
+            // IOMAD - Filter the result.
             if (!PHPUNIT_TEST) {
                 $courselist = iomad::iomad_filter_courses($courselist);
             }
@@ -1789,11 +1781,6 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
             $courses[$record->id] = new core_course_list_element($record);
         }
 
-        // IOMAD - Filter the result.
-        if (!PHPUNIT_TEST) {
-            $courses = iomad::iomad_filter_courses($courses);
-        }
-
         return $courses;
     }
 
@@ -1871,9 +1858,10 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
      */
     public function get_courses($options = array()) {
         global $DB;
+
         $recursive = !empty($options['recursive']);
-        $offset = !empty($options['offset']) ? $options['offset'] : 0;
-        $limit = !empty($options['limit']) ? $options['limit'] : null;
+        $offset = !empty($options['offset']) && (int) $options['offset'] ? (int) $options['offset'] : 0;
+        $limit = !empty($options['limit']) && (int) $options['limit'] ? (int) $options['limit'] : null;
         $sortfields = !empty($options['sort']) ? $options['sort'] : array('sortorder' => 1);
 
         if (!$this->id && !$recursive) {
@@ -3355,6 +3343,7 @@ class core_course_category implements renderable, cacheable_object, IteratorAggr
             ON uc.roleid = rc.roleid
            AND ( $eqpaths OR $likechild )
          WHERE (ra.id IS NOT NULL OR uc.upath IS NOT NULL)
+      ORDER BY cc.sortorder, cc.id
     ";
 
         $params = [

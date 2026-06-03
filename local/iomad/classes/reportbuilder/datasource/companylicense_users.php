@@ -46,11 +46,11 @@ class companylicense_users extends datasource {
      */
     protected function initialise(): void {
 
-        // Get the tables and aliases
+        // Get the tables and aliases.
         $companylicenseusersentity = new companylicenseusers();
-        $companylicenseusersalias = $companylicenseusersentity->get_table_alias('companylicenseusers');
+        $companylicenseusersalias = $companylicenseusersentity->get_table_alias('companylicense_users');
         $companyusersentity = new companyusers();
-        $companyusersalias = $companyusersentity->get_table_alias('companyusers');
+        $companyusersalias = $companyusersentity->get_table_alias('company_users');
         $departmententity = new department();
         $departmentalias = $departmententity->get_table_alias('department');
         $companylicenseentity = new companylicense();
@@ -62,49 +62,45 @@ class companylicense_users extends datasource {
         $companyentity = new company();
         $companyalias = $companyentity->get_table_alias('company');
 
-        $this->set_main_table('company', $companyalias);
+        $this->set_main_table('companylicense_users', $companylicenseusersalias);
 
+        $this->add_entity($companylicenseusersentity);
+
+        // Join the companylicense entity to the companylicense users entity.
+        $companylicenseentity->add_join("JOIN {companylicense} {$companylicensealias}
+                ON {$companylicensealias}.id = {$companylicenseusersalias}.licenseid");
+        $this->add_entity($companylicenseentity);
+
+        // Join in the company entity.
+        $companyentity->add_joins($companylicenseentity->get_joins());
+        $companyentity->add_join("JOIN {company} {$companyalias}
+                ON {$companylicensealias}.companyid = {$companyalias}.id");
         $this->add_entity($companyentity);
 
-        $this->add_entity($companyusersentity
-            ->add_join("JOIN {company_users} {$companyusersalias}
-                ON {$companyusersalias}.companyid = {$companyalias}.id")
-        );
-
-        $this->add_entity($companylicenseusersentity
-            ->add_join("JOIN {companylicense_users} {$companylicenseusersalias}
-                ON ({$useralias}.id = {$companylicenseusersalias}.userid
-                AND {$companylicenseusersalias}.userid = {$companyusersalias}.userid
-                AND {$coursealias}.id = {$companylicenseusersalias}.licensecourseid)")
-        );
+        // Join in the company users entity.
+        $companyusersentity->add_joins($companyentity->get_joins());
+        $companyusersentity->add_join("JOIN {company_users} {$companyusersalias}
+                ON ({$companyusersalias}.userid = {$companylicenseusersalias}.userid
+                    AND {$companyusersalias}.companyid = {$companylicensealias}.companyid
+                    AND {$companyusersalias}.companyid = {$companyalias}.id)");
+        $this->add_entity($companyusersentity);
 
         // Join the department entity to the company entity.
-
-        $this->add_entity($departmententity
-            ->add_join("JOIN {department} {$departmentalias}
+        $departmententity->add_joins($companyusersentity->get_joins());
+        $departmententity->add_join("JOIN {department} {$departmentalias}
                 ON ({$departmentalias}.company = {$companyalias}.id
-                    AND {$departmentalias}.id = {$companyusersalias}.departmentid)")
-        );
+                    AND {$departmentalias}.id = {$companyusersalias}.departmentid)");
+        $this->add_entity($departmententity);
 
-        // Join the companylicense entity to the company entity.
+        // Join the course entity to the company issued entity.
+        $courseentity->add_joins($departmententity->get_joins());
+        $courseentity->add_join("JOIN {course} {$coursealias}
+                ON {$coursealias}.id = {$companylicenseusersalias}.licensecourseid");
+        $this->add_entity($courseentity);
 
-        $this->add_entity($companylicenseentity
-            ->add_join("JOIN {companylicense} {$companylicensealias}
-                ON ({$companylicensealias}.companyid = {$companyalias}.id
-                    AND {$departmentalias}.company = {$companylicensealias}.companyid)")
-        );
-
-        // Join the user entity to the company issued entity.
-        // Join the companylicenseusers entity to the company entity.
-
-        $this->add_entity($courseentity
-            ->add_join("JOIN {course} {$coursealias}")
-        );
-
-        // Join the user entity to the company issued entity.
-
+        // Finally add the join for the user entity.
         $this->add_entity($userentity
-            ->add_joins($companyusersentity->get_joins())
+            ->add_joins($courseentity->get_joins())
             ->add_join("JOIN {user} {$useralias}
                 ON {$useralias}.id = {$companyusersalias}.userid")
             ->set_entity_title(new lang_string('user'))

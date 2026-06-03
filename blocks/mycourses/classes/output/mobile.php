@@ -21,10 +21,18 @@
  * @copyright 2019-onward Mike Churchward (mike.churchward@poetopensource.org)
  * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
 namespace block_mycourses\output;
 
-defined('MOODLE_INTERNAL') || die();
+use block_mycourses\helper;
 
+/**
+ * Mobile output class for block_mycourses.
+ *
+ * @package  block_mycourses
+ * @copyright 2019-onward Mike Churchward (mike.churchward@poetopensource.org)
+ * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 class mobile {
 
     /**
@@ -35,7 +43,6 @@ class mobile {
      */
     public static function mobile_view_block($args) {
         global $CFG, $PAGE, $OUTPUT;
-        require_once($CFG->dirroot . '/blocks/mycourses/locallib.php');
 
         $args = (object) $args;
         $page = isset($args->page) ? $args->page : 'inprogress';
@@ -50,14 +57,25 @@ class mobile {
         $pages[] = ['value' => 'completed',
             'label' => get_string('completedheader', 'block_mycourses'),
             'selected' => (($page == 'completed') ? '1' : '0')];
+        if ($CFG->iomad_use_mandatory_courses) {
+            $pages[] = [
+                'value' => 'mandatory',
+                'label' => get_string('mandatoryheader', 'block_mycourses'),
+                'selected' => (($page == 'mandatory') ? '1' : '0'),
+            ];
+        }
         $data['pages'] = $pages;
 
         $renderer = $PAGE->get_renderer('block_mycourses');
-        $mycompletion = mycourses_get_my_completion();
+
+        $myinprogress = helper::get_my_inprogress($sort, $dir);
+        $myavailable = helper::get_my_available($sort, $dir);
+        $myarchive = helper::get_my_archive($sort, $dir);
+        $mymandatory = helper::get_my_mandatory($sort, $dir);
 
         switch ($page) {
             case 'available':
-                $availableview = new available_view($mycompletion);
+                $availableview = new available_view($myavailable);
                 $data['pagecontent'] = $availableview->export_for_template($renderer);
                 $data['nocourses'] = get_string('noavailable', 'block_mycourses');
                 $data['availablepage'] = true;
@@ -65,15 +83,22 @@ class mobile {
                 break;
 
             case 'completed':
-                $completedview = new completed_view($mycompletion);
+                $completedview = new completed_view($myarchive);
                 $data['pagecontent'] = $completedview->export_for_template($renderer);
                 $data['nocourses'] = get_string('nocompleted', 'block_mycourses');
                 $data['selectlabel'] = get_string('completedheader', 'block_mycourses');
                 break;
 
+            case 'mandatory':
+                $mandatoryview = new mandatory_view($mymandatory);
+                $data['pagecontent'] = $mandatoryview->export_for_template($renderer);
+                $data['nocourses'] = get_string('nomandatory', 'block_mycourses');
+                $data['selectlabel'] = get_string('mandatoryheader', 'block_mycourses');
+                break;
+
             case 'inprogress':
             default:
-                $inprogressview = new inprogress_view($mycompletion);
+                $inprogressview = new inprogress_view($myinprogress);
                 $data['pagecontent'] = $inprogressview->export_for_template($renderer);
                 $data['nocourses'] = get_string('noinprogress', 'block_mycourses');
                 $data['selectlabel'] = get_string('inprogressheader', 'block_mycourses');
@@ -84,11 +109,11 @@ class mobile {
             'templates' => [
                 [
                     'id' => 'main',
-                    'html' => $OUTPUT->render_from_template('block_mycourses/mobile_view_block', $data)
+                    'html' => $OUTPUT->render_from_template('block_mycourses/mobile_view_block', $data),
                 ],
             ],
             'otherdata' => [$page],
-            'files' => null
+            'files' => null,
         ];
         return $return;
     }

@@ -25,9 +25,6 @@ defined('MOODLE_INTERNAL') || die;
 
 if ($hassiteconfig) {
 
-    // Basic navigation settings
-    require($CFG->dirroot . '/local/iomad/lib/basicsettings.php');
-
     $settings = new admin_settingpage('local_iomad_settings', get_string('pluginname', 'local_iomad_settings'));
     $ADMIN->add('localplugins', $settings);
 
@@ -41,10 +38,25 @@ if ($hassiteconfig) {
                                                 get_string('iomad_allow_username_help', 'local_iomad_settings'),
                                                 0));
 
+    $settings->add(new admin_setting_configcheckbox('local_iomad/enforce_username_match',
+                                                get_string('enforce_username_match', 'local_iomad'),
+                                                get_string('enforce_username_match_help', 'local_iomad'),
+                                                0));
+
     $settings->add(new admin_setting_configcheckbox('iomad_show_company_structure',
                                                 get_string('iomad_show_company_structure', 'local_iomad_settings'),
                                                 get_string('iomad_show_company_structure_help', 'local_iomad_settings'),
                                                 1));
+
+    $settings->add(new admin_setting_configcheckbox('iomad_use_mandatory_courses',
+                                                get_string('iomad_use_mandatory_courses', 'local_iomad_settings'),
+                                                get_string('iomad_use_mandatory_courses_help', 'local_iomad_settings'),
+                                                0));
+
+    $settings->add(new admin_setting_configcheckbox('local_iomad/clearonselfunenrol',
+                                                get_string('clearonselfunenrol', 'local_iomad_settings'),
+                                                get_string('clearonselfunenrol_help', 'local_iomad_settings'),
+                                                0));
 
     $institutionsync = [get_string('no'),
                         get_string('companyshortname', 'block_iomad_company_admin'),

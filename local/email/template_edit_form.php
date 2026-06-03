@@ -91,7 +91,7 @@ if (empty($templatesetid)) {
     if (!$templaterecord = $DB->get_record_sql("SELECT et.*, ets.id AS templatestringid, ets.subject,ets.body, ets.signature, ets.lang
                                                 FROM {email_templateset_templates} et
                                                 JOIN {email_templateset_template_strings} ets
-                                                ON (et.id = ets.templateid)
+                                                ON (et.id = ets.templatesetid)
                                                 WHERE et.id = :id
                                                 AND ets.lang = :lang",
                                                ['id' => $templateid,
@@ -101,10 +101,10 @@ if (empty($templatesetid)) {
 }
 
 if (empty($templaterecord->subject)) {
-    $templaterecord->subject = get_string($templatename . '_subject', 'local_email', $lang);
+    $templaterecord->subject = get_string_manager()->get_string($templatename . '_subject', 'local_email', null, $lang);
 }
 if (empty($templaterecord->body)) {
-    $templaterecord->body = get_string($templatename . '_body', 'local_email', $lang);
+    $templaterecord->body = get_string_manager()->get_string($templatename . '_body', 'local_email', null, $lang);
 }
 
 // Correct the navbar.
@@ -123,6 +123,9 @@ $PAGE->set_url($linkurl);
 $PAGE->set_pagelayout('base');
 $PAGE->requires->jquery();
 $PAGE->requires->js('/local/email/module.js');
+
+// Log this page view.
+block_iomad_company_admin\event\dashboard_page_viewed::create_from_url($PAGE->url->out())->trigger();
 
 // Are we dealing with a reset?
 //  Deal with any deletes.

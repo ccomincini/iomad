@@ -20,6 +20,9 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+const selectors = {
+    dropdownSelectors: '[data-action="changeselect"]',
+};
 
 define(['jquery', 'core/ajax', 'core/custom_interaction_events',
     'core/notification'], function($, Ajax, CustomEvents, Notification) {
@@ -31,7 +34,7 @@ define(['jquery', 'core/ajax', 'core/custom_interaction_events',
      */
     var registerEventListeners = function(root) {
         CustomEvents.define(root, [CustomEvents.events.activate]);
-        root.on(CustomEvents.events.activate, "[data-toggle='tab']", function(e) {
+        root.on(CustomEvents.events.activate, "[data-bs-toggle='tab']", function(e) {
             var tabname = $(e.currentTarget).data('tabname');
             // Bootstrap does not change the URL when using BS tabs, so need to do this here.
             // Also check to make sure the browser supports the history API.
@@ -43,7 +46,7 @@ define(['jquery', 'core/ajax', 'core/custom_interaction_events',
                 args: {
                     preferences: [
                         {
-                            type: 'block_mycourses_last_tab',
+                            type: 'block_mycourses_user_last_tab',
                             value: tabname
                         }
                     ]
@@ -53,6 +56,31 @@ define(['jquery', 'core/ajax', 'core/custom_interaction_events',
             Ajax.call([request])[0]
                 .fail(Notification.exception);
         });
+
+        const dropdownSelectors = document.querySelectorAll(selectors.dropdownSelectors);
+        for (let i = 0; i < dropdownSelectors.length; i++) {
+            dropdownSelectors[i].addEventListener('click', event => {
+                event.stopImmediatePropagation();
+                var dropdownname = dropdownSelectors[i].getAttribute('data-name');
+                var dropdownvalue = dropdownSelectors[i].getAttribute('data-value');
+                var prefname = 'block_mycourses_user_' + dropdownname;
+                var request = {
+                    methodname: 'core_user_update_user_preferences',
+                    args: {
+                        preferences: [
+                            {
+                                type: prefname,
+                                value: dropdownvalue
+                            }
+                        ]
+                    }
+                };
+
+                Ajax.call([request])[0]
+                    .fail(Notification.exception);
+            });
+
+        }
     };
 
     return {

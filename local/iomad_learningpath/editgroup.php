@@ -22,6 +22,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use block_iomad_learningpath\event\{group_created, group_updated};
+
 require_once(dirname(__FILE__) . '/../../config.php');
 require_once(dirname(__FILE__) . '/lib.php');
 
@@ -51,6 +53,9 @@ $PAGE->set_pagelayout('base');
 $PAGE->set_title(get_string('grouptitle', 'local_iomad_learningpath'));
 $PAGE->set_heading(get_string('grouptitle', 'local_iomad_learningpath'));
 $output = $PAGE->get_renderer('local_iomad_learningpath');
+
+// Log this page view.
+block_iomad_company_admin\event\dashboard_page_viewed::create_from_url($PAGE->url->out())->trigger();
 
 // IOMAD stuff
 $companypaths = new local_iomad_learningpath\companypaths($companyid, $systemcontext);
@@ -82,8 +87,30 @@ if ($form->is_cancelled()) {
     $group->sequence = $data->sequence;
     if ($id == 0) {
         $id = $DB->insert_record('iomad_learningpathgroup', $group);
+
+        // Fire an event for this.
+        $event = group_created::create([
+            'context' => $companycontext,
+            'objectid' => $id,
+            'userid' => $USER->id,
+            'other' => [
+                'learningpathid' => $group->learningpath,
+            ],
+        ]);
+        $event->trigger();
     } else {
         $DB->update_record('iomad_learningpathgroup', $group);
+
+        // Fire an event for this.
+        $event = group_updated::create([
+            'context' => $companycontext,
+            'objectid' => $group->id,
+            'userid' => $USER->id,
+            'other' => [
+                'learningpathid' => $group->learningpath,
+            ],
+        ]);
+        $event->trigger();
     }
 
     redirect($exiturl);

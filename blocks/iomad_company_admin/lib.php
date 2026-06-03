@@ -21,13 +21,11 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-require_once(dirname(__FILE__) . '/../../config.php'); // Creates $PAGE.
+require_once(__DIR__ . '/../../config.php');
 require_once($CFG->dirroot . '/user/selector/lib.php');
 require_once($CFG->libdir . '/formslib.php');
-
 require_once($CFG->dirroot . '/local/iomad/lib/company.php');
 require_once($CFG->dirroot . '/local/iomad/lib/user.php');
-
 require_once($CFG->dirroot . '/blocks/iomad_company_admin/lib/user_selectors.php');
 require_once($CFG->dirroot . '/blocks/iomad_company_admin/lib/course_selectors.php');
 require_once($CFG->dirroot . '/blocks/iomad_company_admin/lib/template_selectors.php');
@@ -209,6 +207,9 @@ function block_iomad_company_admin_inplace_editable($itemtype, $itemid, $newvalu
     if ($itemtype === 'courses_autoenrol') {
         return \block_iomad_company_admin\output\courses_autoenrol_editable::update($itemid, $newvalue);
     }
+    if ($itemtype === 'courses_mandatory') {
+        return block_iomad_company_admin\output\courses_mandatory_editable::update($itemid, $newvalue);
+    }
     if ($itemtype === 'courses_license') {
         return \block_iomad_company_admin\output\courses_license_editable::update($itemid, $newvalue);
     }
@@ -293,7 +294,7 @@ function block_iomad_company_admin_render_navbar_output(\renderer_base $renderer
     global $USER, $CFG;
 
     // Early bail out conditions.
-    if (!isloggedin() || isguestuser() || \core_user::awaiting_action() || !$CFG->iomad_showcompanydropdown) {
+    if (!isloggedin() || isguestuser() || !$CFG->iomad_showcompanydropdown) {
         return '';
     }
 

@@ -67,6 +67,9 @@ $PAGE->set_url($linkurl);
 $PAGE->set_pagelayout('admin');
 $PAGE->set_title($linktext);
 
+// Log this page view.
+block_iomad_company_admin\event\dashboard_page_viewed::create_from_url($PAGE->url->out())->trigger();
+
 // Array of all valid fields for validation.
 $stdfields = array('username', 'userid', 'courseid', 'coursename', 'coursecode', 'timeenrolled', 'timestarted', 'timecompleted',
         'timeexpires', 'finalscore', 'licensename', 'licenseallocated', 'licenseid', 'companyid', 'company', 'departmentid', 'department');
@@ -120,10 +123,15 @@ if (!empty($fileimport)) {
                                                 $importdata->delimiter_name,
                                                 'validate_uploadcompletion_columns');
 
-            if (!$columns = $cir->get_columns()) {
-               throw new moodle_exception('cannotreadtmpfile', 'error', $returnurl);
+            // Check we got something.
+            if ($readcount === false) {
+                throw new \moodle_exception('csvfileerror', 'tool_uploadcourse', $linkurl, $cir->get_error());
+            } else if ($readcount == 0) {
+                throw new \moodle_exception('csvemptyfile', 'error', $linkurl, $cir->get_error());
             }
 
+            // Clear down the raw file content as we no longer need it.
+            $columns = $cir->get_columns();
             unset($content);
 
             echo $OUTPUT->header();
@@ -158,7 +166,7 @@ if (!empty($fileimport)) {
                             }
                             $completionrec->userid = $userrec->id;
                             $upt->track($key, $userrec->username);
-                            
+
                         } else if (strpos($key, 'userid') !== false) {
                             if (!$userrec = $DB->get_record('user', array('id' => $value))) {
                                 $upt->track('status', get_string('missingfield', 'error', 'userid'), 'error');

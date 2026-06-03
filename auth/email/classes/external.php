@@ -37,6 +37,7 @@ defined('MOODLE_INTERNAL') || die;
 require_once($CFG->libdir . '/authlib.php');
 require_once($CFG->dirroot . '/user/editlib.php');
 require_once($CFG->dirroot . '/user/profile/lib.php');
+require_once($CFG->dirroot . '/local/iomad/lib/iomad.php');
 
 /**
  * Auth e-mail external functions
@@ -58,7 +59,7 @@ class auth_email_external extends external_api {
     protected static function check_signup_enabled() {
         global $CFG;
 
-        if (empty($CFG->registerauth) or $CFG->registerauth != 'email') {
+        if (empty(iomad::get_config('', 'registerauth')) or iomad::get_config('', 'registerauth') != 'email') {
             throw new moodle_exception('registrationdisabled', 'error');
         }
     }

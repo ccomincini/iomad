@@ -213,6 +213,7 @@
             "emailprotect",
             "emoticon",
             "glossary",
+            "iomad",
             "mathjaxloader",
             "mediaplugin",
             "multilang",
@@ -256,7 +257,7 @@
             "rubric"
         ],
         "h5plib": [
-            "v127"
+            "v128"
         ],
         "local": [
             "course_selector",
@@ -661,7 +662,8 @@
         ],
         "h5plib": [
             "v124",
-            "v126"
+            "v126",
+            "v127"
         ],
         "logstore": [
             "legacy"

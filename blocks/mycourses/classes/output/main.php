@@ -15,6 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
+ * IOMAD my courses main render class
  * @package   block_mycourses
  * @copyright 2021 Derick Turner
  * @author    Derick Turner
@@ -22,19 +23,15 @@
  */
 
 namespace block_mycourses\output;
-defined('MOODLE_INTERNAL') || die();
 
+use company;
+use context_system;
+use block_mycourses\helper;
+use iomad;
+use moodle_url;
 use renderable;
 use renderer_base;
 use templatable;
-use core_completion\progress;
-use core_course_renderer;
-use moodle_url;
-use iomad;
-use context_system;
-
-require_once($CFG->dirroot . '/blocks/mycourses/locallib.php');
-require_once($CFG->libdir . '/completionlib.php');
 
 /**
  * Class containing data for my overview block.
@@ -44,9 +41,7 @@ require_once($CFG->libdir . '/completionlib.php');
  */
 class main implements renderable, templatable {
 
-    /**
-     * @var string The tab to display.
-     */
+    /** @var string The tab to display. */
     public $tab;
 
     /**
@@ -61,52 +56,92 @@ class main implements renderable, templatable {
     /**
      * Export this data so it can be used as the context for a mustache template.
      *
-     * @param \renderer_base $output
+     * @param renderer_base $output
      * @return stdClass
      */
     public function export_for_template(renderer_base $output) {
-        global $CFG, $USER, $PAGE;
+        global $CFG, $DB, $USER, $PAGE;
+
+        $companyid = iomad::get_my_companyid(context_system::instance(), false);
+
+        // Work out our URL.
+        $baseurl = clone $PAGE->url;
+        if ($companyid > 0) {
+            $company = new company($companyid);
+            // We need to check if it's the default dashboard page or custom one.
+            if ($PAGE->url->out(false) == $CFG->wwwroot . "/my/index.php" &&
+                $companyurl = $company->get_dashboard_url()) {
+                $baseurl = $companyurl;
+            }
+        }
 
         // Get the sorting params.
-        $sort = optional_param('sort', 'coursefullname', PARAM_CLEAN);
-        $dir = optional_param('dir', 'ASC', PARAM_CLEAN);
-        $tab = optional_param('tab', 'inprogress#mycourses_inprogress_view', PARAM_CLEAN);
-        $view = optional_param('view', $CFG->mycourses_defaultview, PARAM_CLEAN);
+        $tab = get_user_preferences('block_mycourses_user_last_tab', 'inprogress');
+        $sort = get_user_preferences('block_mycourses_user_sort_preference', 'coursefullname');
+        $dir = get_user_preferences('block_mycourses_user_sortdir_preference', 'ASC');
+        $view = get_user_preferences('block_mycourses_user_view_preference', $CFG->mycourses_defaultview);
+        $mandatoryonly = get_user_preferences('block_mycourses_user_mandatory_preference', false);
+        if (!$CFG->iomad_use_mandatory_courses) {
+            $mandatoryonly = false;
+        }
 
         // Get the completion info.
-        $mycompletion = mycourses_get_my_completion($sort, $dir);
-        $myarchive = mycourses_get_my_archive($sort, $dir);
+        $myinprogress = helper::get_my_inprogress($sort, $dir, $mandatoryonly);
+        $myavailable = helper::get_my_available($sort, $dir, $mandatoryonly);
+        $myarchive = helper::get_my_archive($sort, $dir, $mandatoryonly);
+        $mymandatory = helper::get_my_mandatory($sort, $dir);
 
-        $availableview = new available_view($mycompletion);
-        $inprogressview = new inprogress_view($mycompletion);
+        $availableview = new available_view($myavailable);
+        $inprogressview = new inprogress_view($myinprogress);
         $completedview = new completed_view($myarchive);
+        $mandatoryview = new mandatory_view($mymandatory);
 
+        // Are we showing the download certificates button?
         $downloadcerts = false;
         $downloadcertslink = "";
         if (iomad::has_capability('block/iomad_company_admin:downloadmycertificates', context_system::instance())) {
-            $downloadcertslinkurl = new moodle_url('/local/report_completion/index.php', ['certusers' => $USER->id, 'action' => 'downloadcerts', 'sesskey' => sesskey()]);
-            $downloadcertslink = $downloadcertslinkurl->out(false);
-            $downloadcerts = true;
+            // Does the user have any certificates to download?
+            if ($DB->get_records_sql("SELECT lit.id FROM {local_iomad_track} lit
+                                      JOIN {local_iomad_track_certs} litc ON (lit.id = litc.trackid)
+                                      WHERE lit.userid = :userid
+                                      AND lit.companyid = :companyid",
+                                     ['userid' => $USER->id,
+                                      'companyid' => $companyid])) {
+                $downloadcertslinkurl = new moodle_url('/local/report_completion/index.php',
+                                                       ['certusers' => $USER->id,
+                                                        'action' => 'downloadcerts',
+                                                        'sesskey' => sesskey()]);
+                $downloadcertslink = $downloadcertslinkurl->out(false);
+                $downloadcerts = true;
+            }
+        }
+
+        // Are mandatory courses enabled?
+        $mandatoryselectuse = false;
+        if ($CFG->iomad_use_mandatory_courses &&
+            $DB->get_records('company_course_options', ['companyid' => $companyid, 'mandatory' => 1])) {
+            $mandatoryselectuse = true;
         }
 
         // Now, set the tab we are going to be viewing.
         $viewingavailable = false;
         $viewinginprogress = false;
         $viewingcompleted = false;
-        if ($this->tab == 'available') {
+        $viewingmandatory = false;
+        if ($tab == 'available') {
             $viewingavailable = true;
-        } else if ($this->tab == 'completed') {
+        } else if ($tab == 'completed') {
             $viewingcompleted = true;
+        } else if ($tab == 'mandatory' && $mandatoryselectuse) {
+            $viewingmandatory = true;
         } else {
             $viewinginprogress = true;
         }
+
+        // Set the default for no courses.
         $nocoursesurl = $output->image_url('courses', 'block_mycourses')->out();
-        $sortnameurl = new moodle_url($PAGE->url->out(false), ['sort' => 'coursefullname', 'dir' => $dir, 'tab' => $this->tab, 'view' => $view]);
-        $sortdateurl = new moodle_url($PAGE->url->out(false), ['sort' => 'timestarted', 'dir' => $dir, 'tab' => $this->tab, 'view' => $view]);
-        $sortascurl = new moodle_url($PAGE->url->out(false), ['sort' => $sort, 'dir' => 'ASC', 'tab' => $this->tab, 'view' => $view]);
-        $sortdescurl = new moodle_url($PAGE->url->out(false), ['sort' => $sort, 'dir' => 'DESC', 'tab' => $this->tab, 'view' => $view]);
-        $listviewurl = new moodle_url($PAGE->url->out(false), ['sort' => $sort, 'dir' => $dir, 'tab' => $this->tab, 'view' => 'list']);
-        $cardviewurl = new moodle_url($PAGE->url->out(false), ['sort' => $sort, 'dir' => $dir, 'tab' => $this->tab, 'view' => 'card']);
+
+        // Set the type of view being used.
         $viewlist = false;
         $viewcard = false;
         if ($view == 'list') {
@@ -116,25 +151,27 @@ class main implements renderable, templatable {
             $viewcard = true;
         }
 
+        // Set up the JSON output.
         return [
             'midnight' => usergetmidnight(time()),
             'nocourses' => $nocoursesurl,
             'availableview' => $availableview->export_for_template($output),
             'inprogressview' => $inprogressview->export_for_template($output),
             'completedview' => $completedview->export_for_template($output),
+            'mandatoryview' => $mandatoryview->export_for_template($output),
             'viewingavailable' => $viewingavailable,
             'viewinginprogress' => $viewinginprogress,
             'viewingcompleted' => $viewingcompleted,
-            'sortnameurl' => $sortnameurl->out(false),
-            'sortdateurl' => $sortdateurl->out(false),
-            'sortascurl' => $sortascurl->out(false),
-            'sortdescurl' => $sortdescurl->out(false),
-            'listviewurl' => $listviewurl->out(false),
-            'cardviewurl' => $cardviewurl->out(false),
+            'viewingmandatory' => $viewingmandatory,
+            'baseurl' => $baseurl->out(false),
             'downloadcertslink' => $downloadcertslink,
             'downloadcerts' => $downloadcerts,
+            'mandatoryselectuse' => $mandatoryselectuse,
+            'mandatoryonly' => $mandatoryonly,
+            'mandatoryvalue' => !$mandatoryonly,
             'viewlist' => $viewlist,
             'viewcard' => $viewcard,
+            'usemandatory' => $mandatoryselectuse,
         ];
     }
 }

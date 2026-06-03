@@ -24,15 +24,6 @@
 * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
 */
 
-// IOMAD
-require_once($CFG->dirroot . '/local/iomad/lib/company.php');
-$companyid = iomad::get_my_companyid(context_system::instance(), false);
-if ($companyid > 0) {
-    $postfix = "_$companyid";
-} else {
-    $postfix = "";
-}
-
 $ADMIN->add('modules', new admin_category('modsettings', new lang_string('activitymodules')));
 $ADMIN->add('modules', new admin_category('formatsettings', new lang_string('courseformats')));
 $ADMIN->add('modules', new admin_category('customfieldsettings', new lang_string('customfields', 'core_customfield')));
@@ -65,7 +56,6 @@ $ADMIN->add('modules', new admin_category('communicationsettings', new lang_stri
 $ADMIN->add('modules', new admin_category('sms', new lang_string('sms', 'core_sms')));
 $ADMIN->add('modules', new admin_category('contentbanksettings', new lang_string('contentbank')));
 $ADMIN->add('modules', new admin_category('localplugins', new lang_string('localplugins')));
-
 
 if ($hassiteconfig) {
     /* @var admin_root $ADMIN */
@@ -581,6 +571,14 @@ if ($hassiteconfig || has_capability('moodle/question:config', $systemcontext)) 
     foreach ($plugins as $plugin) {
         /** @var \core\plugininfo\qtype $plugin */
         $plugin->load_settings($ADMIN, 'qtypesettings', $hassiteconfig);
+    }
+
+    // Settings for particular question behaviours.
+    $plugins = core_plugin_manager::instance()->get_plugins_of_type('qbehaviour');
+    core_collator::asort_objects_by_property($plugins, 'displayname');
+    foreach ($plugins as $plugin) {
+        /** @var \core\plugininfo\qtype $plugin */
+        $plugin->load_settings($ADMIN, 'qbehavioursettings', $hassiteconfig);
     }
 }
 

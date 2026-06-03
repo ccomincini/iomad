@@ -15,6 +15,8 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
+ * IOMAD Dashboard company SAML2 settings form class
+ *
  * @package   block_iomad_company_admin
  * @copyright 2021 Derick Turner
  * @author    Derick Turner
@@ -25,43 +27,57 @@ namespace block_iomad_company_admin\forms;
 
 defined('MOODLE_INTERNAL') || die;
 
-use \iomad;
-use \company;
-use \moodle_url;
+use auth_iomadsaml2\admin\{iomadsaml2_settings, setting_button, setting_textonly};
+use auth_iomadsaml2\{idp_data, idp_parser, ssl_algorithms, user_fields};
 use context_system;
-use auth_iomadsaml2\admin\iomadsaml2_settings;
-use auth_iomadsaml2\admin\setting_button;
-use auth_iomadsaml2\admin\setting_textonly;
-use auth_iomadsaml2\ssl_algorithms;
-use auth_iomadsaml2\user_fields;
-use moodleform;
-use html_writer;
-use auth_iomadsaml2\idp_data;
-use auth_iomadsaml2\idp_parser;
 use DOMDocument;
 use DOMElement;
 use DOMNodeList;
 use DOMXPath;
+use html_writer;
+use company;
+use company_user;
+use iomad;
+use moodle_url;
+use moodleform;
 
 require_once($CFG->dirroot.'/auth/iomadsaml2/locallib.php');
 
+/**
+ * IOMAD Dashboard company SAML2 settings form class
+ *
+ * @package   block_iomad_company_admin
+ * @copyright 2021 Derick Turner
+ * @author    Derick Turner
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 class company_iomadsaml2_form extends moodleform {
+
+    /**
+     * Form definition
+     *
+     * @return void
+     */
     public function definition() {
-        global $CFG, $PAGE, $DB, $postfix;
+        global $CFG, $postfix;
 
         $yesno = [get_string('no'),
                   get_string('yes'),
                  ];
 
+        // Set up the form.
         $mform = & $this->_form;
-
-        $strrequired = get_string('required');
 
         $mform->addElement('hidden', 'action');
         $mform->setType('action', PARAM_ALPHA);
 
-        $mform->addElement('html', "<h2>" . format_string(get_string('pluginname', 'auth_iomadsaml2') . " : " .
-                                                          get_string('settings', 'moodle')) . "</h2>");
+        $mform->addElement(
+            'html',
+            html_writer::tag(
+                'h2',
+                format_string(get_string('pluginname', 'auth_iomadsaml2') . " : " .
+                              get_string('settings', 'moodle'))
+            ));
 
         $mform->addElement('static', 'headingdescription', '', get_string('auth_iomadsaml2description', 'auth_iomadsaml2'));
 
@@ -105,7 +121,11 @@ class company_iomadsaml2_form extends moodleform {
         $mform->addElement('select',
                 'debug' . $postfix,
                 get_string('debug', 'auth_iomadsaml2'), $yesno);
-        $mform->addElement('static', 'devbuddesc', '', get_string('debug_help', 'auth_iomadsaml2', $CFG->wwwroot . '/auth/iomadsaml2/debug.php'));
+        $mform->addElement(
+            'static',
+            'devbuddesc',
+            '',
+            get_string('debug_help', 'auth_iomadsaml2', $CFG->wwwroot . '/auth/iomadsaml2/debug.php'));
 
         // Logging.
         $mform->addElement('select',
@@ -159,7 +179,11 @@ class company_iomadsaml2_form extends moodleform {
             html_writer::tag('a', get_string('certificate', 'auth_iomadsaml2'),
                              ['href' => $CFG->wwwroot . '/auth/iomadsaml2/regenerate.php',
                               'class' => 'btn btn-primary']));
-        $mform->addElement('static', 'certificatelockdesc', '', get_string('certificate_help', 'auth_iomadsaml2', $CFG->wwwroot . '/auth/iomadsaml2/cert.php'));
+        $mform->addElement(
+            'static',
+            'certificatelockdesc',
+            '',
+            get_string('certificate_help', 'auth_iomadsaml2', $CFG->wwwroot . '/auth/iomadsaml2/cert.php'));
 
         $mform->addElement('passwordunmask',
             'privatekeypass' . $postfix,
@@ -202,7 +226,11 @@ class company_iomadsaml2_form extends moodleform {
                                          get_string('assertionsconsumerservices', 'auth_iomadsaml2'),
                                          $assertionsconsumerservices);
         $acssetting->setMultiple('true');
-        $mform->addElement('static', 'assertionsconsumerservicesdesc', '', get_string('assertionsconsumerservices_help', 'auth_iomadsaml2'));
+        $mform->addElement(
+            'static',
+            'assertionsconsumerservicesdesc',
+            '',
+            get_string('assertionsconsumerservices_help', 'auth_iomadsaml2'));
 
         $mform->addElement('select',
             'allowcreate' . $postfix,
@@ -300,10 +328,18 @@ class company_iomadsaml2_form extends moodleform {
 
         // Lowercase.
         $toloweroptions = [
-            iomadsaml2_settings::OPTION_TOLOWER_EXACT => get_string('tolower:exact', 'auth_iomadsaml2'),
-            iomadsaml2_settings::OPTION_TOLOWER_LOWER_CASE => get_string('tolower:lowercase', 'auth_iomadsaml2'),
-            iomadsaml2_settings::OPTION_TOLOWER_CASE_INSENSITIVE => get_string('tolower:caseinsensitive', 'auth_iomadsaml2'),
-            iomadsaml2_settings::OPTION_TOLOWER_CASE_AND_ACCENT_INSENSITIVE => get_string('tolower:caseandaccentinsensitive', 'auth_iomadsaml2'),
+            iomadsaml2_settings::OPTION_TOLOWER_EXACT
+            =>
+            get_string('tolower:exact', 'auth_iomadsaml2'),
+            iomadsaml2_settings::OPTION_TOLOWER_LOWER_CASE
+            =>
+            get_string('tolower:lowercase', 'auth_iomadsaml2'),
+            iomadsaml2_settings::OPTION_TOLOWER_CASE_INSENSITIVE
+            =>
+            get_string('tolower:caseinsensitive', 'auth_iomadsaml2'),
+            iomadsaml2_settings::OPTION_TOLOWER_CASE_AND_ACCENT_INSENSITIVE
+            =>
+            get_string('tolower:caseandaccentinsensitive', 'auth_iomadsaml2'),
         ];
         $mform->addElement('select',
                 'tolower' . $postfix,
@@ -316,10 +352,13 @@ class company_iomadsaml2_form extends moodleform {
         $mform->addElement('textarea',
             'requestedattributes' . $postfix,
             get_string('requestedattributes', 'auth_iomadsaml2'));
-        $mform->addElement('static', 'requestedattributesdesc', '', get_string('requestedattributes_help', 'auth_iomadsaml2',
-                                                                               ['example' => "<pre>
+        $mform->addElement('static', 'requestedattributesdesc', '', get_string(
+            'requestedattributes_help',
+            'auth_iomadsaml2',
+            ['example' => "<pre>
     urn:mace:dir:attribute-def:eduPersonPrincipalName
-    urn:mace:dir:attribute-def:mail *</pre>"]));
+    urn:mace:dir:attribute-def:mail *</pre>"]
+        ));
         $mform->setType('requestedattributes' . $postfix, PARAM_TEXT);
 
         // Autocreate Users.
@@ -347,7 +386,7 @@ class company_iomadsaml2_form extends moodleform {
         // Multi IdP display type.
         $multiidpdisplayoptions = [
             iomadsaml2_settings::OPTION_MULTI_IDP_DISPLAY_DROPDOWN => get_string('multiidpdropdown', 'auth_iomadsaml2'),
-            iomadsaml2_settings::OPTION_MULTI_IDP_DISPLAY_BUTTONS => get_string('multiidpbuttons', 'auth_iomadsaml2')
+            iomadsaml2_settings::OPTION_MULTI_IDP_DISPLAY_BUTTONS => get_string('multiidpbuttons', 'auth_iomadsaml2'),
         ];
         $mform->addElement('select',
             'multiidpdisplay' . $postfix,
@@ -364,7 +403,7 @@ class company_iomadsaml2_form extends moodleform {
         $mform->addElement('static', 'attemptsignoutdesc', '', get_string('attemptsignout_help', 'auth_iomadsaml2'));
         $mform->setDefault('attempsignout' . $postfix, 1);
 
-        // SAMLPHP tempdir
+        // SAMLPHP tempdir.
         $mform->addElement('text',
             'tempdir' . $postfix,
             get_string('tempdir', 'auth_iomadsaml2'));
@@ -381,13 +420,17 @@ class company_iomadsaml2_form extends moodleform {
                 );
 
         // User block and redirect feature setting section.
-        $mform->addElement('html', '<h3>' . get_string('blockredirectheading', 'auth_iomadsaml2') . '</h3>');
-        $mform->addElement('static', 'redirectheaddesc', '', get_string('auth_iomadsaml2blockredirectdescription', 'auth_iomadsaml2'));
+        $mform->addElement('html', html_writer::tag('h3', get_string('blockredirectheading', 'auth_iomadsaml2')));
+        $mform->addElement(
+            'static',
+            'redirectheaddesc',
+            '',
+            get_string('auth_iomadsaml2blockredirectdescription', 'auth_iomadsaml2'));
 
         // Flagged login response options.
         $flaggedloginresponseoptions = [
             iomadsaml2_settings::OPTION_FLAGGED_LOGIN_MESSAGE => get_string('flaggedresponsetypemessage', 'auth_iomadsaml2'),
-            iomadsaml2_settings::OPTION_FLAGGED_LOGIN_REDIRECT => get_string('flaggedresponsetyperedirect', 'auth_iomadsaml2')
+            iomadsaml2_settings::OPTION_FLAGGED_LOGIN_REDIRECT => get_string('flaggedresponsetyperedirect', 'auth_iomadsaml2'),
         ];
 
         // Flagged login response options selector.
@@ -397,7 +440,6 @@ class company_iomadsaml2_form extends moodleform {
             $flaggedloginresponseoptions);
         $mform->addElement('static', 'flagresponsetypedesc', '', get_string('flagresponsetype_help', 'auth_iomadsaml2'));
         $mform->setDefault('flagresponsetype' . $postfix, iomadsaml2_settings::OPTION_FLAGGED_LOGIN_REDIRECT);
-
 
         // Set the http OR https fully qualified scheme domain name redirect destination for flagged accounts.
         $mform->addElement('text',
@@ -414,14 +456,40 @@ class company_iomadsaml2_form extends moodleform {
         $mform->setDefault('flagmessage' . $postfix, get_string('flagmessage_default', 'auth_iomadsaml2'));
         $mform->setType('flagmessage' . $postfix, PARAM_TEXT);
 
+        // Show reset?
+        $mform->addElement(
+            'selectyesno',
+            'allowreset',
+            get_string('allowformreset', 'block_iomad_company_admin'),
+        );
+
         // Disable the onchange popup.
         $mform->disable_form_change_checker();
 
-        $this->add_action_buttons();
+        $actionbuttons = [];
+        $actionbuttons[] = $mform->createElement('submit', 'submitbutton', get_string('savechanges'));
+        $actionbuttons[] = $mform->createElement('cancel');
+        $actionbuttons[] = $mform->createElement(
+            'submit',
+            'resetbutton',
+            get_string('resetdefault', 'block_iomad_company_admin'),
+            [
+                'class' => 'dangerbutton',
+            ]);
+        $mform->addGroup($actionbuttons, 'buttonar', '', ' ', false);
+
+        $mform->hideIF('resetbutton', 'allowreset', 'eq', 0);
     }
 
+    /**
+     * Form validation
+     *
+     * @param array $data
+     * @param array $files
+     * @return array
+     */
     public function validation($data, $files) {
-        global $DB, $CFG, $SESSION, $postfix;
+        global $postfix;
 
         $errors = parent::validation($data, $files);
 
@@ -523,11 +591,11 @@ class company_iomadsaml2_form extends moodleform {
             $oldidp = $oldidps[$idp->idpurl][$entityid];
 
             if (!empty($idpname) && $oldidp->defaultname !== $idpname) {
-                $DB->set_field('auth_iomadsaml2_idps', 'defaultname', $idpname, array('id' => $oldidp->id));
+                $DB->set_field('auth_iomadsaml2_idps', 'defaultname', $idpname, ['id' => $oldidp->id]);
             }
 
             if (!empty($logo) && $oldidp->logo !== $logo) {
-                $DB->set_field('auth_iomadsaml2_idps', 'logo', $logo, array('id' => $oldidp->id));
+                $DB->set_field('auth_iomadsaml2_idps', 'logo', $logo, ['id' => $oldidp->id]);
             }
 
             // Remove the idp from the current array so that we don't delete it later.
@@ -557,7 +625,7 @@ class company_iomadsaml2_form extends moodleform {
 
         foreach ($oldidps as $metadataidps) {
             foreach ($metadataidps as $oldidp) {
-                $DB->delete_records('auth_iomadsaml2_idps', array('id' => $oldidp->id));
+                $DB->delete_records('auth_iomadsaml2_idps', ['id' => $oldidp->id]);
             }
         }
     }

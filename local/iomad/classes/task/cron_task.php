@@ -15,6 +15,8 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
+ * Local IOMAD cron task
+ *
  * @package   local_iomad
  * @copyright 2021 Derick Turner
  * @author    Derick Turner
@@ -23,7 +25,19 @@
 
 namespace local_iomad\task;
 
-class cron_task extends \core\task\scheduled_task {
+use core\task\scheduled_task;
+use block_iomad_company_admin\event\user_license_unassigned;
+use context_course;
+
+/**
+ * Local IOMAD cron task
+ *
+ * @package   local_iomad
+ * @copyright 2021 Derick Turner
+ * @author    Derick Turner
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class cron_task extends scheduled_task {
 
     /**
      * Get a descriptive name for this task (shown to admins).
@@ -47,30 +61,30 @@ class cron_task extends \core\task\scheduled_task {
         // Are we copying Company to institution?
         if (!empty($CFG->iomad_sync_institution)) {
 
-            // Get the users in multiple companies
+            // Get the users in multiple companies.
             $multiusers = $DB->get_records_sql("SELECT userid
                                                 FROM {company_users}
                                                 GROUP BY userid
                                                 HAVING COUNT(companyid) > 1");
-            $multisql = "";
             $notmultisql = "";
+            $usernotinparams = [];
             if (!empty($multiusers)) {
-                $notmultisql = " AND u.id NOT IN (" . implode(',', array_keys($multiusers)) . ")";
-                $multisql = " WHERE u.id IN (" . implode(',', array_keys($multiusers)) . ")";
+                [$usernotinsql, $usernotinparams] = $DB->get_in_or_equal(array_keys($multiusers),
+                                                                        SQL_PARAMS_NAMED,
+                                                                        'userid',
+                                                                        false);
+                $notmultisql = " AND u.id $usernotinsql";
             }
             if ($CFG->iomad_sync_institution == 1) {
                 mtrace("Copying company shortnames to user institution fields\n");
-
                 // Get the users where it's wrong.
                 $users = $DB->get_records_sql("SELECT u.*, c.shortname as targetname
                                                FROM {user} u
                                                JOIN {company_users} cu ON cu.userid = u.id
                                                JOIN {company} c ON cu.companyid = c.id
                                                WHERE u.institution != c.shortname
-                                               AND c.parentid = 0
                                                $notmultisql",
-                                               [], 0, 500);
-
+                                               $usernotinparams, 0, 500);
             } else if ($CFG->iomad_sync_institution == 2) {
                 mtrace("Copying company name to user institution fields\n");
 
@@ -80,9 +94,8 @@ class cron_task extends \core\task\scheduled_task {
                                                JOIN {company_users} cu ON cu.userid = u.id
                                                JOIN {company} c ON cu.companyid = c.id
                                                WHERE u.institution != c.name
-                                               AND c.parentid = 0
                                                $notmultisql",
-                                               [], 0, 500);
+                                               $usernotinparams, 0, 500);
             }
 
             // Update the users.
@@ -104,9 +117,17 @@ class cron_task extends \core\task\scheduled_task {
                                                 HAVING COUNT(departmentid) > 1");
             $notmultisql = "";
             $multisql = "";
+            $userinparams = [];
             if (!empty($multiusers)) {
-                $notmultisql = " AND u.id NOT IN (" . implode(',', array_keys($multiusers)) . ")";
-                $multisql = " WHERE u.id IN (" . implode(',', array_keys($multiusers)) . ")";
+                [$usernotinsql, $usernotinparams] = $DB->get_in_or_equal(array_keys($multiusers),
+                                                                        SQL_PARAMS_NAMED,
+                                                                        'userid',
+                                                                        false);
+                [$userinsql, $userinparams] = $DB->get_in_or_equal(array_keys($multiusers),
+                                                                   SQL_PARAMS_NAMED,
+                                                                   'userid');
+                $notmultisql = " AND u.id $usernotinsql";
+                $multisql = " WHERE u.id $userinsql ";
             }
             $users = $DB->get_records_sql("SELECT DISTINCT u.*, d.name as targetname
                                            FROM {user} u
@@ -114,9 +135,8 @@ class cron_task extends \core\task\scheduled_task {
                                            JOIN {company} c ON cu.companyid = c.id
                                            JOIN {department} d ON cu.departmentid = d.id
                                            WHERE u.department != d.name
-                                           AND c.parentid = 0
                                            $notmultisql",
-                                           [], 0, 1);
+                                          $usernotinparams, 0, 500);
             // Update the users.
             foreach ($users as $user) {
                 $DB->set_field('user', 'department', $user->targetname, ['id' => $user->id]);
@@ -126,15 +146,16 @@ class cron_task extends \core\task\scheduled_task {
             if (!empty($multiusers)) {
                 $users = $DB->get_records_sql("SELECT DISTINCT u.*
                                                FROM {user} u
-                                               $multisql");
+                                               $multisql",
+                                              $userinparams);
                 foreach ($users as $user) {
                     $string = get_string_manager()->get_string('blockmultiple', 'admin', '', $user->lang);
                     $user->department = $string;
                     $DB->update_record('user', $user);
                 }
             }
-            
-            $users = array();
+
+            $users = [];
         }
 
         // Suspend any companies which need it.
@@ -143,7 +164,7 @@ class cron_task extends \core\task\scheduled_task {
                                                       WHERE suspended = 0
                                                       AND validto IS NOT NULL
                                                       AND validto < :runtime",
-                                                      array('runtime' => $runtime))) {
+                                                     ['runtime' => $runtime])) {
             foreach ($suspendcompanies as $suspendcompany) {
                 $target = new \company($suspendcompany->id);
                 $target->suspend(true);
@@ -157,27 +178,27 @@ class cron_task extends \core\task\scheduled_task {
                                                         AND validto IS NOT NULL
                                                         AND suspendafter > 0
                                                         AND validto + suspendafter < :runtime",
-                                                        array('runtime' => $runtime))) {
+                                                       ['runtime' => $runtime])) {
             foreach ($suspendcompanies as $suspendcompany) {
                 $target = new \company($suspendcompany->id);
                 $target->terminate();
             }
         }
 
-        // Clear users from courses where the license has expired and the option is chosen
+        // Clear users from courses where the license has expired and the option is chosen.
         mtrace ("Clear users from courses where the license has expired and the option is chosen");
         if ($licenses = $DB->get_records_sql("SELECT DISTINCT cl.*  FROM {companylicense} cl
                                               JOIN {local_iomad_track} lit ON (cl.id = lit.licenseid)
                                               WHERE cl.clearonexpire = 1
                                               AND cl.cutoffdate < :time
                                               AND lit.coursecleared = 0",
-                                                  array('time' => $runtime))) {
+                                             ['time' => $runtime])) {
             foreach ($licenses as $license) {
                 mtrace("Dealing with license id $license->id for company id $license->companyid");
                 // Get the corresponding entry from the LIT table.
                 if ($litrecs = $DB->get_records_select('local_iomad_track',
                                                        'licenseid = :licenseid
-                                                        AND coursecleared != 1 
+                                                        AND coursecleared != 1
                                                         AND companyid = :companyid',
                                                        ['companyid' => $license->companyid,
                                                         'licenseid' => $license->id])) {
@@ -193,28 +214,29 @@ class cron_task extends \core\task\scheduled_task {
                                 // Already been re-enrolled - so mark it as dealt with.
                                 $DB->set_field('local_iomad_track', 'coursecleared', 1, ['id' => $litrec->id]);
                             } else {
-                                mtrace("Auto clearing userid $litrec->userid from courseid $litrec->courseid with record id $litrec->id");
+                                mtrace("Auto clearing userid $litrec->userid " .
+                                       "from courseid $litrec->courseid with record id $litrec->id");
                                 \company_user::delete_user_course($litrec->userid, $litrec->courseid, 'autodelete', $litrec->id);
                             }
                         } else {
                             mtrace("Removing unused license for userid $litrec->userid from courseid $litrec->courseid");
-                            $DB->delete_records('companylicense_users', array('licenseid' => $litrec->licensid,
-                                                                              'licensecourseid' => $litrec->courseid,
-                                                                              'userid' => $litrec->userid,
-                                                                              'issuedate' => $litrec->licenseallocated));
+                            $DB->delete_records('companylicense_users', ['licenseid' => $litrec->licensid,
+                                                                         'licensecourseid' => $litrec->courseid,
+                                                                         'userid' => $litrec->userid,
+                                                                         'issuedate' => $litrec->licenseallocated]);
                             // Create an event.
-                            $eventother = array('licenseid' => $litrec->licenseid,
-                                                'duedate' => 0);
-                            $event = \block_iomad_company_admin\event\user_license_unassigned::create(array('context' => \context_course::instance($litrec->courseid),
-                                                                                                            'objectid' => $litrec->licenseid,
-                                                                                                            'courseid' => $litrec->courseid,
-                                                                                                            'userid' => $litrec->userid,
-                                                                                                            'other' => $eventother));
+                            $eventother = ['licenseid' => $litrec->licenseid,
+                                           'duedate' => 0];
+                            $event = user_license_unassigned::create(['context' => context_course::instance($litrec->courseid),
+                                                                      'objectid' => $litrec->licenseid,
+                                                                      'courseid' => $litrec->courseid,
+                                                                      'userid' => $litrec->userid,
+                                                                      'other' => $eventother]);
                             $event->trigger();
                         }
                     }
                     // If this is a re-usable license we want to dump the allocation record too.
-                    if ($license->type == 1 || $license->type ==3) {
+                    if ($license->type == 1 || $license->type == 3) {
                         $DB->delete_records('companylicense_users', ['licenseid' => $license->id]);
                     }
                 }

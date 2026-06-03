@@ -21,6 +21,8 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+$string['clearonselfunenrol'] = 'Clear user on self unenrol';
+$string['clearonselfunenrol_help'] = 'Enabling this option will cause the users course interactions to be reset as well as they enrolment removed when they choose the Unenrol me from this course option for Self enrolment instances.';
 $string['pluginname'] = 'IOMAD Settings';
 $string['privacy:metadata'] = 'The Local IOMAD settings plugin only shows data stored in other locations.';
 $string['customtext2'] = 'Custom Text 2';
@@ -91,6 +93,8 @@ $string['iomad_useicons'] = 'Use icons in IOMAD dashboard';
 $string['iomad_useicons_help'] = 'Selecting this changes the dashboard icons to use images instead of Font Awesome characters.';
 $string['iomad_showcompanydropdown'] = 'Show company switcher in navbar';
 $string['iomad_showcompanydropdown_help'] = 'Selecting this displays the company drop down switcher in the navbar when the user can access multiple companies. Users will need to be given another way to access the company switcher is this is disabled and they do not have access to the IOMAD dashboard in their current company.';
+$string['iomad_use_mandatory_courses'] = 'Enable mandatory courses';
+$string['iomad_use_mandatory_courses_help'] = 'Enabling mandatory courses allows for courses to be flagged as mandatory. Completion reports and the user\'s dashboard can then filter on these courses.';
 $string['reset_annually'] = 'Annually';
 $string['reset_daily'] = 'Daily';
 $string['reset_never'] = 'Never';

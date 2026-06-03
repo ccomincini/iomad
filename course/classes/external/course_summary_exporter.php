@@ -188,18 +188,20 @@ class course_summary_exporter extends \core\external\exporter {
         $image = \cache::make('core', 'course_image')->get($course->id);
 
         if (is_null($image)) {
-            $image = false;
+            return false;
         }
 
         // IOMAD
         // Check that the image has the correct tenant URL.
         if ($image &&
+            str_starts_with($image, 'http') &&
             !str_starts_with($image, $CFG->wwwroot)) {
             // We don't match - fix it.
             $image = \iomad::fix_url($image);
         }
 
-        return $image;
+        $url = new moodle_url($image);
+        return $url->out();
     }
 
     /**

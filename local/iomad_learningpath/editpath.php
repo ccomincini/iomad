@@ -22,6 +22,9 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use block_iomad_learningpath\event\learningpath_created;
+use block_iomad_learningpath\event\learningpath_updated;
+
 require_once(dirname(__FILE__) . '/../../config.php');
 require_once(dirname(__FILE__) . '/lib.php');
 
@@ -47,6 +50,9 @@ $PAGE->set_url($url);
 $PAGE->set_pagelayout('base');
 $PAGE->set_title(get_string('managetitle', 'local_iomad_learningpath'));
 $output = $PAGE->get_renderer('local_iomad_learningpath');
+
+// Log this page view.
+block_iomad_company_admin\event\dashboard_page_viewed::create_from_url($PAGE->url->out())->trigger();
 
 // IOMAD stuff
 $companypaths = new local_iomad_learningpath\companypaths($companyid, $systemcontext);
@@ -83,12 +89,29 @@ if ($form->is_cancelled()) {
         $path->timecreated = time();
         $path->active = 0;
         $id = $DB->insert_record('iomad_learningpath', $path);
+
+        // Fire an event for this.
+        $event = learningpath_created::create([
+            'context' => $companycontext,
+            'objectid' => $id,
+            'userid' => $USER->id,
+        ]);
+        $event->trigger();
     } else {
         $DB->update_record('iomad_learningpath', $path);
+
+        // Fire an event for this.
+        $event = learningpath_updated::create([
+            'context' => $companycontext,
+            'objectid' => $path->id,
+            'userid' => $USER->id,
+        ]);
+        $event->trigger();
     }
+
     // Check if a file has been uploaded
     $fs = get_file_storage();
-    $files = $fs->get_area_files(5, 'user', 'draft', $data->picture, 'itemid', false);
+    $files = $fs->get_area_files(context_user::instance($USER->id)->id, 'user', 'draft', $data->picture, 'itemid', false);
     if (!empty($files)) {
         file_save_draft_area_files($data->picture, $systemcontext->id, 'local_iomad_learningpath', 'picture', $id,
             ['maxfiles' => 1]);

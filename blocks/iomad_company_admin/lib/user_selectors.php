@@ -30,13 +30,17 @@ abstract class company_user_selector_base extends user_selector_base {
 
     protected $companyid;
     protected $courseid;
+    protected $parentdepartmentid;
     protected $departmentid;
+    protected $subdepartments;
     protected $courses;
     protected $company;
     protected $selectedcourses;
     protected $searchoptionsoutput = false;
     protected $profilefieldid = 0;
     protected $allusers = false;
+    protected $groupid;
+    protected $threadid;
 
     /** @var array JavaScript YUI3 Module definition */
     protected static $jsmodule = array(
@@ -50,7 +54,6 @@ abstract class company_user_selector_base extends user_selector_base {
                 ));
 
     public function __construct($name, $options) {
-        global $DB;
 
         $this->companyid  = $options['companyid'];
         if (isset ( $options['courseid']) ) {
@@ -76,6 +79,13 @@ abstract class company_user_selector_base extends user_selector_base {
         } else {
             $profileid = optional_param($name . '_profilefieldid', 0, PARAM_INT);
         }
+
+        // User selector base uses accesscontext for some permissions.
+        if (empty($options['accesscontext']) &&
+            !empty($options['context'])) {
+            $options['accesscontext'] = $options['context'];
+        }
+
         $this->profilefieldid = $profileid;
         $this->company = new company($this->companyid);
 
@@ -194,7 +204,7 @@ abstract class company_user_selector_base extends user_selector_base {
                                                           JOIN {user_info_field} uif ON (uic.id = uif.categoryid)
                                                           WHERE uic.id NOT IN (
                                                               SELECT profileid FROM {company}
-                                                              WHERE id != :companyid
+                                                              WHERE id <> :companyid
                                                           )
                                                           ORDER BY uif.name DESC",
                                                           array('companyid' => $this->companyid));
@@ -357,7 +367,7 @@ class current_company_users_user_selector extends company_user_selector_base {
         $params['companyid'] = $this->companyid;
 
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u');
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
 
         $sql = " FROM {user} u
                  JOIN {company_users} cu ON (cu.companyid = :companyid AND cu.userid = u.id )
@@ -419,7 +429,7 @@ class potential_company_users_user_selector extends company_user_selector_base {
             $usersql = "AND u.id NOT IN (SELECT userid FROM {company_users})";
         }
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u') . ',u.institution';
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
 
         $sql = " FROM {user} u
                  LEFT JOIN {user_info_data} ui ON ui.userid = u.id
@@ -496,13 +506,13 @@ class current_company_course_user_selector extends company_user_selector_base {
         }
 
         $fields      = 'SELECT DISTINCT  ue.id as userenrolmentid, u.id as userid,' . $this->required_fields_sql('u') . ', u.email, c.id AS courseid, c.fullname';
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT ue.id)';
 
         $sql = " FROM {user} u
                  JOIN {company_users} cu ON (cu.userid = u.id AND cu.educator = 0 $departmentsql)
                  LEFT JOIN {user_info_data} ui ON (ui.userid = u.id AND ui.userid = cu.userid)
                  JOIN {user_enrolments} ue ON (ue.userid = u.id)
-                 JOIN {enrol} e ON (ue.enrolid = e.id AND ".$DB->sql_compare_text('e.enrol')."='manual' AND e.status = 0)
+                 JOIN {enrol} e ON (ue.enrolid = e.id AND e.status = 0)
                  JOIN {course} c ON (e.courseid = c.id)
                  JOIN {local_iomad_track} lit ON (c.id = lit.courseid AND e.courseid = lit.courseid AND cu.userid = lit.userid AND ue.userid = lit.userid AND cu.companyid = lit.companyid AND ue.timestart = lit.timeenrolled)
 
@@ -666,7 +676,7 @@ class potential_company_course_user_selector extends company_user_selector_base 
             return array();
         } else {
             $usersql = "SELECT ue.userid,count(ue.enrolid) AS enrolcount FROM {user_enrolments} ue
-                        JOIN {enrol} e ON (ue.enrolid = e.id AND ".$DB->sql_compare_text('e.enrol')."='manual' AND e.status = 0)
+                        JOIN {enrol} e ON (ue.enrolid = e.id AND e.status = 0)
                         JOIN {local_iomad_track} lit ON (e.courseid = lit.courseid AND ue.userid=lit.userid AND ue.timestart = lit.timeenrolled)
                         WHERE $coursesql
                         AND lit.companyid = :companyid
@@ -730,7 +740,7 @@ class potential_company_course_user_selector extends company_user_selector_base 
         }
 
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u');
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
 
         $sql = " FROM {user} u
                  JOIN {company_users} cu ON cu.userid = u.id
@@ -817,7 +827,7 @@ class potential_department_user_selector extends company_user_selector_base {
                     return array();
                 }
             } else {
-                if ($users = $DB->get_records('company_users', array('companyid' => $this->companyid,
+                if ($users = $DB->get_records('company_users', array('departmentid' => $this->departmentid,
                                                                      'educator' => 1,
                                                                      'suspended' => 0), null, 'userid')) {
                     // Only return the keys (user ids).
@@ -836,7 +846,7 @@ class potential_department_user_selector extends company_user_selector_base {
                     INNER JOIN {company_users} cu ON c.id = cu.companyid
                     WHERE
                     cu.userid = $id
-                    AND c.id != :companyid
+                    AND c.id <> :companyid
                     ORDER BY cu.id";
             if ($companies = $DB->get_records_sql($sql, array('companyid' => $this->companyid), 0, 1)) {
                 $company = array_shift($companies);
@@ -861,7 +871,7 @@ class potential_department_user_selector extends company_user_selector_base {
         $params['companyid'] = $this->companyid;
 
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u') . ", u.email";
-        $countfields = 'SELECT DISTINCT COUNT(u.id)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
 
         $departmentusers = $this->get_department_user_ids();
         // Add the ID of the current User to exclude them from the results
@@ -880,9 +890,9 @@ class potential_department_user_selector extends company_user_selector_base {
         $userfilter .= " AND u.id NOT IN (
                             SELECT userid FROM {company_users}
                             WHERE companyid = ".$this->companyid."
-                            AND managertype != 0
-                            AND departmentid != ".$this->departmentid."
-                            AND managertype != ".$this->roletype.")";
+                            AND managertype <> 0
+                            AND departmentid <> ".$this->departmentid."
+                            AND managertype <> ".$this->roletype.")";
 
         if ($this->roletype != 0) {
             // Dealing with management possibles could be from anywhere.
@@ -924,7 +934,7 @@ class potential_department_user_selector extends company_user_selector_base {
                                 WHERE $wherecondition
                                 AND u.suspended = 0
                                 AND du.managertype = 1
-                                AND du.companyid != " . $this->companyid."
+                                AND du.companyid <> " . $this->companyid."
                                 AND du.userid NOT IN (
                                   SELECT userid FROM {company_users}
                                   WHERE managertype = 1
@@ -1028,7 +1038,7 @@ class current_department_user_selector extends company_user_selector_base {
         $params['thiscompanyid'] = $this->companyid;
 
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u');
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
 
         if ($this->roletype == 1 && !empty($parentcompanies)) {
             $othermanagersql = " AND cu.userid NOT IN (
@@ -1050,7 +1060,7 @@ class current_department_user_selector extends company_user_selector_base {
 
                  WHERE $wherecondition $othermanagersql AND u.suspended = 0
                  $rolesql
-                 AND  u.id != :userid
+                 AND  u.id <> :userid
                  AND cu.departmentid = :departmentid";
 
         $order = ' ORDER BY u.firstname ASC, u.lastname ASC';
@@ -1279,7 +1289,7 @@ class potential_license_user_selector extends company_user_selector_base {
         $params['companyid'] = $this->companyid;
 
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u').', u.email ';
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
         $myusers = company::get_my_users($this->companyid);
 
         // are we dealing with an educator license?
@@ -1289,7 +1299,8 @@ class potential_license_user_selector extends company_user_selector_base {
             $edusql = "";
         }
         $licenseusers = $this->get_license_user_ids();
-        if (count($licenseusers) > 0 && (!$this->multiselect || !$this->program)) {
+
+        if (count($licenseusers) > 0 && ($this->multiselect || $this->program)) {
             $userfilter = " AND NOT u.id in (" . implode(',', $licenseusers) . ") ";
         } else {
             $userfilter = "";
@@ -1336,9 +1347,7 @@ class potential_license_user_selector extends company_user_selector_base {
                 return $this->too_many_results($search, $potentialmemberscount);
             }
         }
-
         $availableusers = $DB->get_records_sql($fields . $sql . $order, $params);
-
         if (empty($availableusers)) {
             return array();
         }
@@ -1506,7 +1515,7 @@ class current_license_user_selector extends company_user_selector_base {
             }
             $maxcount = $CFG->iomad_max_select_users;
             $fields      = 'SELECT DISTINCT clu.id as licenseid, ' . $this->required_fields_sql('u') . ', u.email, c.fullname, clu.isusing ';
-            $countfields = 'SELECT COUNT(1)';
+            $countfields = 'SELECT COUNT(DISTINCT clu.id)';
 
             $sql = " FROM {companylicense_users} clu
                      LEFT JOIN {user} u ON (clu.userid = u.id)
@@ -1526,8 +1535,8 @@ class current_license_user_selector extends company_user_selector_base {
             $order = ' ORDER BY u.firstname , u.lastname, c.fullname ASC';
         } else {
             $maxcount = $CFG->iomad_max_select_users * count($this->courses);
-            $fields      = 'SELECT clu.id as licenseid, ' . $this->required_fields_sql('u') . ', u.email, clu.isusing ';
-            $countfields = 'SELECT COUNT(1)';
+            $fields      = 'SELECT DISTINCT clu.userid as licenseid, ' . $this->required_fields_sql('u') . ', u.email, clu.isusing ';
+            $countfields = 'SELECT COUNT(DISTINCT clu.userid)';
 
             $sql = " FROM {companylicense_users} clu
                      LEFT JOIN {user} u ON (clu.userid = u.id)
@@ -1696,7 +1705,7 @@ class current_company_group_user_selector extends company_user_selector_base {
         }
 
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u');
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
 
         $sql = " FROM {user} u
                  JOIN {company_users} cu  ON ( cu.userid = u.id AND managertype = 0 $departmentsql )
@@ -1797,7 +1806,7 @@ class potential_company_group_user_selector extends company_user_selector_base {
         }
 
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u');
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
 
         $sql = " FROM {user} u
                  JOIN {company_users} cu ON (cu.userid = u.id)
@@ -1821,7 +1830,7 @@ class potential_company_group_user_selector extends company_user_selector_base {
                      SELECT userid
                      FROM {companylicense_users}
                      WHERE licensecourseid = :liccourseid
-                     AND groupid != :licgroupid
+                     AND groupid <> :licgroupid
                    )
                  )";
 
@@ -1890,7 +1899,7 @@ class current_company_thread_user_selector extends company_user_selector_base {
         }
 
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u');
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
 
         $sql = " FROM {user} u
                  JOIN {company_users} cu ON (cu.userid = u.id $departmentsql)
@@ -2016,7 +2025,7 @@ class potential_company_thread_user_selector extends company_user_selector_base 
         $userfilter .= " AND u.id NOT IN (" .$CFG->siteadmins .") ";
 
         $fields      = 'SELECT DISTINCT ' . $this->required_fields_sql('u');
-        $countfields = 'SELECT COUNT(1)';
+        $countfields = 'SELECT COUNT(DISTINCT u.id)';
 
         $sql = " FROM {user} u
                  JOIN {company_users} cu ON cu.userid = u.id
@@ -2024,7 +2033,7 @@ class potential_company_thread_user_selector extends company_user_selector_base 
 
                  WHERE $wherecondition  AND u.suspended = 0 $departmentsql
                  AND cu.companyid = :companyid
-                 AND cu.managertype = 0
+                 AND cu.educator = 0
                  AND cu.userid not in ( ". $CFG->siteadmins .")
                  $userfilter
                  AND u.id NOT IN (

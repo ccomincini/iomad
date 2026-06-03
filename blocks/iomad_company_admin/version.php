@@ -15,6 +15,8 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
+ * IOMAD Dashboard
+ *
  * @package   block_iomad_company_admin
  * @copyright 2021 Derick Turner
  * @author    Derick Turner
@@ -23,8 +25,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->release  = '5.0.4 (Build: 20251208)';    // Human-friendly version name
-$plugin->version  = 2025041450;   // The (date) version of this plugin.
+$plugin->release  = '5.0.7 (Build: 20260420)';    // Human-friendly version name.
+$plugin->version  = 2026052650;   // The (date) version of this plugin.
 $plugin->requires = 2025041400;   // Requires this Moodle version.
 $plugin->component  = 'block_iomad_company_admin';
 $plugin->dependencies = ['local_iomad' => 2025041400];

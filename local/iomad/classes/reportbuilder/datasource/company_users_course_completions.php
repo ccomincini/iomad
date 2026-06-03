@@ -48,10 +48,9 @@ class company_users_course_completions extends datasource {
         $companyentity = new company();
         $companyalias = $companyentity->get_table_alias('company');
 
-
-        // Get the tables and aliases
+        // Get the tables and aliases.
         $companyusersentity = new companyusers();
-        $companyusersalias = $companyusersentity->get_table_alias('companyusers');
+        $companyusersalias = $companyusersentity->get_table_alias('company_users');
         $departmententity = new department();
         $departmentalias = $departmententity->get_table_alias('department');
         $userentity = new user();
@@ -59,7 +58,7 @@ class company_users_course_completions extends datasource {
         $courseentity = new course();
         $coursealias = $courseentity->get_table_alias('course');
         $coursecompletionsentity = new coursecompletions();
-        $coursecompletionsalias = $coursecompletionsentity->get_table_alias('coursecompletions');
+        $coursecompletionsalias = $coursecompletionsentity->get_table_alias('local_iomad_track');
 
         $this->set_main_table('local_iomad_track', $coursecompletionsalias);
 
@@ -68,7 +67,7 @@ class company_users_course_completions extends datasource {
         // Join the company entity to the coursecompltions entity.
         $this->add_entity($companyentity
             ->add_join("JOIN {company} {$companyalias}
-                ON {$coursecompletionsalias}.courseid = {$companyalias}.id")
+                ON {$coursecompletionsalias}.companyid = {$companyalias}.id")
         );
 
         // Join the companyusers entity to the coursecompltions entity.
@@ -153,6 +152,7 @@ class company_users_course_completions extends datasource {
      */
     public function get_default_conditions(): array {
         return [
+            'company:id',
             'company:name',
             'user:fullname',
             'department:name',

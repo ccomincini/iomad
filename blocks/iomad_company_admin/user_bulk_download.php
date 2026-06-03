@@ -15,40 +15,41 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
+ * IOMAD Dashboard download users main page
+ *
  * @package   block_iomad_company_admin
  * @copyright 2021 Derick Turner
  * @author    Derick Turner
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-/*
-* script for downloading of user lists
-*/
+use core\user;
 
-require_once('../../config.php');
+require_once(__DIR__ . '/../../config.php');
 require_once($CFG->libdir.'/adminlib.php');
-require_once('lib.php');
+require_once(__DIR__ . '/lib.php');
 
 $format = optional_param('format', '', PARAM_ALPHA);
 
+// Log in and set up $PAGE.
 require_login();
 
+// Set the companyid.
 $systemcontext = context_system::instance();
-
-// Set the companyid
 $companyid = iomad::get_my_companyid($systemcontext);
 $companycontext = \core\context\company::instance($companyid);
 $company = new company($companyid);
 
+// Can we even do anything?
 iomad::require_capability('block/iomad_company_admin:user_upload', $companycontext);
 
-// Correct the navbar.
 // Set the name for the page.
 $linktext = get_string('users_download', 'block_iomad_company_admin');
+
 // Set the url.
 $linkurl = new moodle_url('/blocks/iomad_company_admin/user_bulk_download.php');
 
-// Print the page header.
+// Finish setting up PAGE.
 $PAGE->set_context($companycontext);
 $PAGE->set_url($linkurl);
 $PAGE->set_pagelayout('base');
@@ -57,57 +58,63 @@ $PAGE->set_title($linktext);
 // Set the page heading.
 $PAGE->set_heading($linktext);
 
-$return = $CFG->wwwroot.'/'.$CFG->admin.'/user/user_bulk.php';
-
 // Deal with the departments.
 $parentlevel = company::get_company_parentnode($companyid);
 $companydepartment = $parentlevel->id;
 
-if (iomad::has_capability('block/iomad_company_admin:edit_all_departments',$companycontext)) {
+// Who can the user see?
+if (iomad::has_capability('block/iomad_company_admin:edit_all_departments', $companycontext)) {
     $userhierarchylevel = $parentlevel->id;
 } else {
     $userlevel = $company->get_userlevel($USER);
     $userhierarchylevel = key($userlevel);
 }
 
+// Are we downloading?
 if ($format) {
-    $fields = array('id'        => 'id',
-                    'username'  => 'username',
-                    'email'     => 'email',
-                    'firstname' => 'firstname',
-                    'lastname'  => 'lastname',
-                    'idnumber'  => 'idnumber',
-                    'institution' => 'institution',
-                    'department' => 'department',
-                    'phone1'    => 'phone1',
-                    'phone2'    => 'phone2',
-                    'city'      => 'city',
-                    'url'       => 'url',
-                    'icq'       => 'icq',
-                    'skype'     => 'skype',
-                    'aim'       => 'aim',
-                    'yahoo'     => 'yahoo',
-                    'msn'       => 'msn',
-                    'country'   => 'country');
+    $fields = [
+        'id' => 'id',
+        'username' => 'username',
+        'email' => 'email',
+        'firstname' => 'firstname',
+        'lastname' => 'lastname',
+        'idnumber' => 'idnumber',
+        'institution' => 'institution',
+        'department' => 'department',
+        'phone1' => 'phone1',
+        'phone2' => 'phone2',
+        'city' => 'city',
+        'url' => 'url',
+        'icq' => 'icq',
+        'skype' => 'skype',
+        'aim' => 'aim',
+        'yahoo' => 'yahoo',
+        'msn' => 'msn',
+        'country' => 'country',
+    ];
 
     // Get company category.
-    if ($category = $DB->get_record_sql('SELECT uic.id, uic.name
-                                         FROM {user_info_category} uic, {company} c
-                                         WHERE c.id = '.$companyid.' AND
-                                         c.shortname=uic.name')) {
-        if ($extrafields = $DB->get_records('user_info_field', array('categoryid' => $category->id))) {
+    if ($category = $DB->get_record_sql(
+        "SELECT uic.id, uic.name
+           FROM {user_info_category} uic
+           JOIN {company} c ON (uic.id = c.profileid)
+          WHERE c.id = :companyid",
+        ['companyid' => $companyid])) {
+        if ($extrafields = $DB->get_records('user_info_field', ['categoryid' => $category->id])) {
             foreach ($extrafields as $n => $v) {
                 $fields['profile_field_'.$v->shortname] = 'profile_field_'.$v->shortname;
             }
         }
     }
     // Get non company categories.
-    if ($categories = $DB->get_records_sql('SELECT id, name
-                                            FROM {user_info_category}
-                                            WHERE name NOT IN (
-                                                SELECT shortname FROM {company})')) {
+    if ($categories = $DB->get_records_sql(
+        "SELECT id, name
+           FROM {user_info_category}
+          WHERE id NOT IN (
+              SELECT profileid FROM {company}
+          )")) {
         foreach ($categories as $category) {
-            if ($extrafields = $DB->get_records('user_info_field', array('categoryid' => $category->id))) {
+            if ($extrafields = $DB->get_records('user_info_field', ['categoryid' => $category->id])) {
                 foreach ($extrafields as $n => $v) {
                     $fields['profile_field_'.$v->shortname] = 'profile_field_'.$v->shortname;
                 }
@@ -115,36 +122,30 @@ if ($format) {
         }
     }
 
-    $params = array('companyid'=>$companyid);
+    $params = ['companyid' => $companyid];
 
     // Get department users.
     $departmentusers = array();
     $userlevels = $company->get_userlevel($USER);
     foreach ($userlevels as $userlevelid => $userlevel) {
-        $departmentusers = company::get_recursive_department_users($userlevelid);
+        $departmentusers = $departmentusers + company::get_recursive_department_users($userlevelid);
     }
     if (count($departmentusers) > 0) {
-        $departmentids = "";
-        foreach ($departmentusers as $departmentuser) {
-            if (!empty($departmentids)) {
-                $departmentids .= ",".$departmentuser->userid;
-            } else {
-                $departmentids .= $departmentuser->userid;
-            }
-        }
-        $sqlsearch = " AND userid in ($departmentids) ";
+        [$insql, $inparams] = $DB->get_in_or_equal(array_keys($departmentusers),
+                                                   SQL_PARAMS_NAMED,
+                                                   'duids');
+        $sqlsearch = " AND userid {$insql} ";
+        $params = $params + $inparams;
     } else {
         $sqlsearch = "AND 1 = 0";
     }
 
-
-
-    $userids = $DB->get_records_sql_menu("SELECT DISTINCT userid, userid as id
-        FROM
-            {company_users}
-        WHERE
-            companyid = :companyid
-            " . $sqlsearch, $params);
+    $userids = $DB->get_records_sql(
+        "SELECT DISTINCT userid AS id
+                    FROM {company_users}
+                   WHERE companyid = :companyid
+                         $sqlsearch",
+        $params);
 
     switch ($format) {
         case 'csv' : user_download_csv($userids, $fields, ! $companyid);
@@ -159,21 +160,29 @@ echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('download', 'admin'));
 
 // Get url of ourselves.
-$url = new moodle_url('/blocks/iomad_company_admin/user_bulk_download.php', array( 'companyid' => $companyid) );
+$url = new moodle_url('/blocks/iomad_company_admin/user_bulk_download.php', ['companyid' => $companyid]);
 
 // Show download options menu.
 echo $OUTPUT->box_start();
 echo '<ul>';
-echo '<li><a href="' . $url->out(true, array('format' => 'csv')) . '">'.get_string('downloadtext').'</a></li>';
-echo '<li><a href="' . $url->out(true, array('format' => 'ods')) . '">'.get_string('downloadods').'</a></li>';
-echo '<li><a href="' . $url->out(true, array('format' => 'xls')) . '">'.get_string('downloadexcel').'</a></li>';
+echo '<li><a href="' . $url->out(true, ['format' => 'csv']) . '">'.get_string('downloadtext').'</a></li>';
+echo '<li><a href="' . $url->out(true, ['format' => 'ods']) . '">'.get_string('downloadods').'</a></li>';
+echo '<li><a href="' . $url->out(true, ['format' => 'xls']) . '">'.get_string('downloadexcel').'</a></li>';
 echo '</ul>';
 echo $OUTPUT->box_end();
 
 echo $OUTPUT->footer();
 
+/**
+ * ODS download processor
+ *
+ * @param array $userids
+ * @param array $fields
+ * @param bool $includecompanyfield
+ * @return void
+ */
 function user_download_ods($userids, $fields, $includecompanyfield) {
-    global $CFG, $SESSION, $DB;
+    global $CFG;
 
     require_once("$CFG->libdir/odslib.class.php");
     require_once($CFG->dirroot.'/user/profile/lib.php');
@@ -196,21 +205,21 @@ function user_download_ods($userids, $fields, $includecompanyfield) {
     $worksheet[0]->write(0, $col, 'temppassword');
 
     $row = 1;
-    foreach ($userids as $userid) {
+    foreach (array_keys($userids) as $userid) {
         // Stop the script from timing out on large numbers of users.
         set_time_limit(30);
-        if (!$user = $DB->get_record('user', array('id' => $userid))) {
+        if (!$user = user::get_user($userid)) {
             continue;
         }
         $col = 0;
         profile_load_data($user);
-        foreach ($fields as $field => $unused) {
+        foreach (array_keys($fields) as $field) {
             // Stop the script from timing out on large numbers of users.
             set_time_limit(30);
             if ($includecompanyfield || $field != "profile_field_company") {
                 if (!empty($user->$field)) {
-                    // Check if the value ['text'] isset and if not return the value
-                    $value = (isset($user->$field['text'])) ? $user->$field['text'] : $user->$field;
+                    // Check if the value ['text'] isset and if not return the value.
+                    $value = (isset($user->{$field}['text'])) ? $user->{$field}['text'] : $user->$field;
                     $worksheet[0]->write($row, $col, $value);
                 } else {
                     $worksheet[0]->write($row, $col, '');
@@ -226,8 +235,16 @@ function user_download_ods($userids, $fields, $includecompanyfield) {
     die;
 }
 
+/**
+ * XLS Download handler
+ *
+ * @param array $userids
+ * @param array $fields
+ * @param bool $includecompanyfield
+ * @return void
+ */
 function user_download_xls($userids, $fields, $includecompanyfield) {
-    global $CFG, $SESSION, $DB;
+    global $CFG;
 
     require_once("$CFG->libdir/excellib.class.php");
     require_once($CFG->dirroot.'/user/profile/lib.php');
@@ -250,21 +267,21 @@ function user_download_xls($userids, $fields, $includecompanyfield) {
     $worksheet[0]->write(0, $col, 'temppassword');
 
     $row = 1;
-    foreach ($userids as $userid) {
+    foreach (array_keys($userids) as $userid) {
         // Stop the script from timing out on large numbers of users.
         set_time_limit(30);
-        if (!$user = $DB->get_record('user', array('id' => $userid))) {
+        if (!$user = user::get_user($userid)) {
             continue;
         }
         $col = 0;
         profile_load_data($user);
-        foreach ($fields as $field => $unused) {
+        foreach (array_keys($fields) as $field) {
             // Stop the script from timing out on large numbers of users.
             set_time_limit(30);
             if ($includecompanyfield || $field != "profile_field_company") {
                 if (!empty($user->$field)) {
-                    // Check if the value ['text'] isset and if not return the value
-                    $value = (isset($user->$field['text'])) ? $user->$field['text'] : $user->$field;
+                    // Check if the value ['text'] isset and if not return the value.
+                    $value = (isset($user->{$field}['text'])) ? $user->{$field}['text'] : $user->$field;
                     $worksheet[0]->write($row, $col, $value);
                 } else {
                     $worksheet[0]->write($row, $col, '');
@@ -280,8 +297,11 @@ function user_download_xls($userids, $fields, $includecompanyfield) {
     die;
 }
 
+/**
+ * CSV Download processor
+ */
 function user_download_csv($userids, $fields, $includecompanyfield) {
-    global $CFG, $SESSION, $DB;
+    global $CFG;
 
     require_once($CFG->dirroot.'/user/profile/lib.php');
 
@@ -294,7 +314,7 @@ function user_download_csv($userids, $fields, $includecompanyfield) {
     header("Pragma: public");
 
     $delimiter = get_string('listsep', 'langconfig');
-    $encdelim  = '&#'.ord($delimiter);
+    $encdelim = '&#'.ord($delimiter);
 
     $row = array();
     foreach ($fields as $fieldname) {
@@ -305,21 +325,21 @@ function user_download_csv($userids, $fields, $includecompanyfield) {
     $row[] = "temppassword";
     echo implode($delimiter, $row)."\n";
 
-    foreach ($userids as $userid) {
+    foreach (array_keys($userids) as $userid) {
         // Stop the script from timing out on large numbers of users.
         set_time_limit(30);
-        $row = array();
-        if (!$user = $DB->get_record('user', array('id' => $userid))) {
+        $row = [];
+        if (!$user = user::get_user($userid)) {
             continue;
         }
         profile_load_data($user);
-        foreach ($fields as $field => $unused) {
+        foreach (array_keys($fields) as $field) {
             // Stop the script from timing out on large numbers of users.
             set_time_limit(30);
             if ($includecompanyfield || $field != "profile_field_company") {
                 if (!empty($user->$field)) {
-                    // Check if the value ['text'] isset and if not return the value
-                    $value = (isset($user->$field['text'])) ? $user->$field['text'] : $user->$field;
+                    // Check if the value ['text'] isset and if not return the value.
+                    $value = (isset($user->{$field}['text'])) ? $user->{$field}['text'] : $user->$field;
                     $row[] = str_replace($delimiter, $encdelim, $value);
                 } else {
                     $row[] = str_replace($delimiter, $encdelim, '');
