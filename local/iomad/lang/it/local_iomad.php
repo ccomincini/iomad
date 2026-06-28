@@ -118,3 +118,5 @@ $string['iomad:managecourses'] = 'Gestisci corsi';
 $string['iomad:managelicenses'] = 'Gestisci licenze';
 $string['iomad:viewreports'] = 'Visualizza report';
 $string['iomad:managesettings'] = 'Gestisci impostazioni IOMAD';
+$string['coursesearchfields'] = 'Ricerca corso';
+$string['datesearchfields'] = 'Ricerca per data';
