@@ -66,6 +66,11 @@ $string['coursesummary_expired'] = 'Iscritto: {$a->enrolled}
 Iniziato: {$a->timestarted}
 Scaduto: {$a->timeexpires}
 Voto: {$a->finalscore}';
+$string['coursesummary_noexpire'] = 'Iscritto: {$a->enrolled}
+Iniziato: {$a->timestarted}
+Completato: {$a->timecompleted}
+Voto: {$a->finalscore}
+Ultimo completamento: {$a->lastcompleted}';
 $string['coursesummary_noexpiry'] = 'Iscritto: {$a->enrolled}
 Iniziato: {$a->timestarted}
 Completato: {$a->timecompleted}
@@ -89,7 +94,10 @@ $string['coursesummary_partial_extra_outdate'] = 'Completato: {$a->timecompleted
 Scade: {$a->timeexpires}
 Ultimo completamento: {$a->lastcompleted}
 Scaduto: {$a->timeexpired}';
+$string['coursesummary_partial_noexpire'] = 'Completato: {$a->timecompleted}
+Ultimo completamento: {$a->lastcompleted}';
 $string['report_completion_overview_title'] = 'Report panoramica completamento';
+$string['reportbytext'] = 'Mostra il report come testo';
 $string['notcompleted'] = 'In corso';
 $string['notcompleted-expiring'] = 'In corso (In scadenza)';
 $string['notcompleted-indate'] = 'In corso (OK)';
