@@ -63,5 +63,5 @@ $string['revokeconfirm'] = 'La licenza verrà rimossa dall\'utente e verrà rila
 $string['revoke_successful'] = 'La licenza è stata revocata con successo per questo utente e i suoi dati di corso e reportistica sono stati rimossi.';
 $string['user_detail_title'] = 'Report utente';
 $string['usercoursedetails'] = 'Dettagli utente';
-$string['userdetails'] = 'Informazioni report per ';
+$string['userdetails'] = 'Informazioni report per {$a}';
 $string['viewfullcourse'] = 'Visualizza riepilogo completo del corso';

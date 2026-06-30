@@ -557,8 +557,12 @@ $sqlparams['companyid'] = $companyid;
 $sqlparams = $sqlparams + $searchinfo->searchparams;
 
 // Do we have any additional reporting fields?
+$extracolumns = [];
 if (!$bycourse) {
+    $precolumncount = count($columns);
     $company->add_company_extrafields($headers, $columns, $selectsql, $fromsql, $sqlparams);
+    // Keep the aliases of the columns actually added, in order, to fill the row cells below.
+    $extracolumns = array_slice($columns, $precolumncount);
 }
 
 // Deal with initial sort.
@@ -887,6 +891,11 @@ if (!$bycourse) {
             }
             $coursesummary['finalscore'] = $usercourse->finalscore;
 
+            // Completion percentage of the course activities (used in the tooltip), via core API.
+            $completionpct = \core_completion\progress::get_course_progress_percentage(
+                get_course($usercourse->courseid), $usercourse->userid);
+            $coursesummary['completion'] = is_null($completionpct) ? 0 : (int) round($completionpct);
+
             // Make the extra info.
             if (!$showfulldetails) {
                 if (empty($coursesummary['timeexpired'])) {
@@ -1045,6 +1054,11 @@ if (!$bycourse) {
                 $row[] = html_writer::tag('span', nl2br($rowtext));
             }
         }
+
+        // Add the company extra reporting fields (idnumber, username, profile fields, ...).
+        foreach ($extracolumns as $extracolumn) {
+            $row[] = isset($user->$extracolumn) ? format_string($user->$extracolumn) : '';
+        }
         $table->data[] = $row;
     }
 } else {
@@ -1129,6 +1143,11 @@ if (!$bycourse) {
                 $coursesummary['timeexpired'] = userdate($usercourse->timeexpired, $CFG->iomad_date_format);
             }
             $coursesummary['finalscore'] = $usercourse->finalscore;
+
+            // Completion percentage of the course activities (used in the tooltip), via core API.
+            $completionpct = \core_completion\progress::get_course_progress_percentage(
+                get_course($usercourse->courseid), $usercourse->userid);
+            $coursesummary['completion'] = is_null($completionpct) ? 0 : (int) round($completionpct);
 
             // Make the extra info.
             if (!$showfulldetails) {

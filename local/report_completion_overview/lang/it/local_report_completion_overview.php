@@ -47,34 +47,34 @@ $string['coursesummary'] = 'Iscritto: {$a->enrolled}
 Iniziato: {$a->timestarted}
 Completato: {$a->timecompleted}
 Scade: {$a->timeexpires}
-Voto: {$a->finalscore}';
+Completamento: {$a->completion}%';
 $string['coursesummary_extra_indate'] = 'Iscritto: {$a->enrolled}
 Iniziato: {$a->timestarted}
 Completato: {$a->timecompleted}
 Scade: {$a->timeexpires}
-Voto: {$a->finalscore}
+Completamento: {$a->completion}%
 Ultimo completamento: {$a->lastcompleted}
 Scade: {$a->timeexpired}';
 $string['coursesummary_extra_outdate'] = 'Iscritto: {$a->enrolled}
 Iniziato: {$a->timestarted}
 Completato: {$a->timecompleted}
 Scade: {$a->timeexpires}
-Voto: {$a->finalscore}
+Completamento: {$a->completion}%
 Ultimo completamento: {$a->lastcompleted}
 Scaduto: {$a->timeexpired}';
 $string['coursesummary_expired'] = 'Iscritto: {$a->enrolled}
 Iniziato: {$a->timestarted}
 Scaduto: {$a->timeexpires}
-Voto: {$a->finalscore}';
+Completamento: {$a->completion}%';
 $string['coursesummary_noexpire'] = 'Iscritto: {$a->enrolled}
 Iniziato: {$a->timestarted}
 Completato: {$a->timecompleted}
-Voto: {$a->finalscore}
+Completamento: {$a->completion}%
 Ultimo completamento: {$a->lastcompleted}';
 $string['coursesummary_noexpiry'] = 'Iscritto: {$a->enrolled}
 Iniziato: {$a->timestarted}
 Completato: {$a->timecompleted}
-Voto: {$a->finalscore}';
+Completamento: {$a->completion}%';
 $string['coursesummary_nograde'] = 'Iscritto: {$a->enrolled}
 Iniziato: {$a->timestarted}
 Completato: {$a->timecompleted}

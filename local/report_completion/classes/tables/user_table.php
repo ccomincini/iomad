@@ -676,24 +676,7 @@ class user_table extends table_sql {
                                          'licensecourseid' => $row->courseid,
                                          'issuedate' => $row->licenseallocated])) {
                         if (!$this->is_downloading()) {
-                            return html_writer::start_tag(
-                                'div',
-                                [
-                                    'class' => 'progress',
-                                    'style' => 'height:20px',
-                                    'data-html' => 'true',
-                                    'title' => $tooltip,
-                                ]
-                            ) .
-                            html_writer::tag(
-                                'div',
-                                '0%',
-                                [
-                                    'class' => 'progress-bar',
-                                    'style' => 'width:0%;height:20px',
-                                ]
-                            ) .
-                            html_writer::end_tag('div');
+                            return $this->render_progress_bar(0, $tooltip);
                         } else {
                             return get_string('completion-alt-auto-y', 'completion', "0%");
                         }
@@ -716,28 +699,46 @@ class user_table extends table_sql {
             }
 
             if (!$this->is_downloading()) {
-                return html_writer::start_tag(
-                                'div',
-                                [
-                                    'class' => 'progress',
-                                    'style' => 'height:20px',
-                                    'data-html' => 'true',
-                                    'title' => $tooltip,
-                                ]
-                            ) .
-                            html_writer::tag(
-                                'div',
-                                $progress . '%',
-                                [
-                                    'class' => 'progress-bar',
-                                    'style' => 'width:' . $progress . '%;height:20px',
-                                ]
-                            ) .
-                            html_writer::end_tag('div');
+                return $this->render_progress_bar($progress, $tooltip);
             } else {
                 return get_string('completion-alt-auto-y', 'completion', "$progress%");
             }
         }
+    }
+
+    /**
+     * Render a completion progress bar with the percentage label always
+     * visible, centred over the bar regardless of the filled width.
+     *
+     * @param int $progress completion percentage (0-100)
+     * @param string $tooltip HTML tooltip for the bar
+     * @return string HTML content to go inside the td.
+     */
+    private function render_progress_bar($progress, $tooltip) {
+        $progress = (int) $progress;
+        return html_writer::start_tag(
+            'div',
+            [
+                'class' => 'progress completionprogress',
+                'style' => 'height:20px',
+                'data-html' => 'true',
+                'title' => $tooltip,
+            ]
+        ) .
+        html_writer::tag(
+            'div',
+            '',
+            [
+                'class' => 'progress-bar',
+                'style' => 'width:' . $progress . '%;height:20px',
+            ]
+        ) .
+        html_writer::tag(
+            'span',
+            $progress . '%',
+            ['class' => 'progressvalue']
+        ) .
+        html_writer::end_tag('div');
     }
 
     /**
@@ -779,6 +780,17 @@ class user_table extends table_sql {
      */
     public function other_cols($column, $row) {
         global $CFG, $DB;
+
+        // Company extra reporting fields added by company::add_company_extrafields():
+        // standard user fields are aliased as "u<field>" (e.g. uidnumber, uusername),
+        // custom profile fields keep their "profile_field_*" name. Without this they fall
+        // through (profile_field_* even matches the "_" criteria branch below) and render empty.
+        if (isset($row->$column) &&
+                (strpos($column, 'profile_field_') === 0 ||
+                 (!empty($CFG->iomad_report_fields) &&
+                  in_array(substr($column, 1), explode(',', $CFG->iomad_report_fields), true)))) {
+            return format_string((string) $row->$column);
+        }
 
         if (isset($row->$column) && ($column === 'email' || $column === 'idnumber') &&
                 (!$this->is_downloading() || $this->export_class_instance()->supports_html())) {
