@@ -24,6 +24,10 @@ PGC=$(docker ps --format '{{.Names}}' | grep -iE 'upia.*postgres|postgres.*upia'
 echo "Container PHP: $PHPC   Container PG: $PGC"
 echo "Sito: $BASE   Backup: $BKDIR"
 mkdir -p "$BKDIR"
+# Alberi "iomad-new-*" rimasti da tentativi precedenti interrotti prima dello swap: rimuoverli.
+for stale in "$WWW"/iomad-new-*; do
+  [ -d "$stale" ] && { echo "Rimuovo albero incompleto precedente: $stale"; rm -rf "$stale"; }
+done
 
 # 0) Versione attuale
 docker exec "$PHPC" grep -m1 "^\$release" /var/www/iomad/version.php || true
@@ -62,9 +66,16 @@ echo "--- fine report"
 chown -R www-data:www-data "$NEW"
 
 # 4) Manutenzione ON + dump DB
+# Il dump va fatto come superutente: la tabella di backup mdl_iomad_courses_bk_20260703 ha proprietario
+# "postgres" e mdl_upia non può bloccarla (LOCK TABLE ... permission denied). Ripiego: dump escludendo quella tabella.
 docker exec -w /var/www/iomad "$PHPC" php admin/cli/maintenance.php --enable
-docker exec "$PGC" pg_dump -Fc -U mdl_upia mdl_upia > "$BKDIR/mdl_upia_pre_deploy_$STAMP.dump"
-ls -la "$BKDIR/mdl_upia_pre_deploy_$STAMP.dump"
+DUMP="$BKDIR/mdl_upia_pre_deploy_$STAMP.dump"
+if ! docker exec "$PGC" pg_dump -Fc -U postgres mdl_upia > "$DUMP" 2>"$BKDIR/pg_dump.err"; then
+  echo "pg_dump come postgres fallito ($(head -c 300 "$BKDIR/pg_dump.err")); riprovo come mdl_upia escludendo mdl_iomad_courses_bk_20260703"
+  docker exec "$PGC" pg_dump -Fc -U mdl_upia -T mdl_iomad_courses_bk_20260703 mdl_upia > "$DUMP"
+fi
+[ -s "$DUMP" ] || { echo "ERRORE: dump vuoto"; exit 1; }
+ls -la "$DUMP"
 
 # 5) Swap atomico
 mv "$BASE" "$WWW/iomad-old-$STAMP"
