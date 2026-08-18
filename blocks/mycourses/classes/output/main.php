@@ -123,8 +123,8 @@ class main implements renderable, templatable {
             $mandatoryselectuse = true;
         }
 
-        // Se l'utente non ha corsi in corso, mostra la scheda "Corsi disponibili"
-        // invece di una scheda vuota.
+        // If the user has no in-progress courses, show the "Available courses" tab
+        // instead of an empty "Courses in progress" tab.
         if ($tab == 'inprogress' && empty($myinprogress) && !empty($myavailable)) {
             $tab = 'available';
         }
@@ -142,12 +142,6 @@ class main implements renderable, templatable {
             $viewingmandatory = true;
         } else {
             $viewinginprogress = true;
-        }
-
-        // If the user has no in-progress courses, show the "Available courses" tab
-        // instead of an empty "Courses in progress" tab.
-        if ($tab == 'inprogress' && empty($myinprogress) && !empty($myavailable)) {
-            $tab = 'available';
         }
 
         // Set the default for no courses.
