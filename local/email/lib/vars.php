@@ -123,7 +123,7 @@ class EmailVars {
             // Activity information fields .
                         'Activity_Name', 'Activity_Duedate',
             // Miscellaneouss fields.
-                        'LinkURL', 'SiteURL', 'Event_Name',
+                        'LinkURL', 'SiteURL', 'PasswordResetURL', 'Event_Name',
             // Microlearning fields.
                         'Nugget_Name', 'Nugget_URL'
         );
@@ -235,5 +235,18 @@ class EmailVars {
         }
 
         return $returnurl;
+    }
+
+    /**
+     * Provide the PasswordResetURL method for templates.
+     *
+     * Always built on the site wwwroot (company hostnames may redirect every path to the login page).
+     *
+     * returns text;
+     *
+     **/
+    function PasswordResetURL() {
+        $url = new moodle_url('/login/forgot_password.php');
+        return $url->out(false);
     }
 }

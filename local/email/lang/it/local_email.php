@@ -390,8 +390,13 @@ $string['password_update_subject'] = 'Notifica cambio password per {User_FirstNa
 $string['password_update_body'] = '<p>La tua password è stata aggiornata dallo staff amministrativo. La tua nuova password è</p>
 <p>{User_Newpassword}</p>
 <p>Visita <a href="{LinkURL}">{LinkURL}</a> per cambiarla.</p>';
-$string['course_not_started_warning_subject'] = 'Avviso: il corso {Course_FullName} non è stato iniziato';
-$string['course_not_started_warning_body'] = '<p>Gentile {User_FirstName},</p><p>Non hai ancora iniziato la tua formazione su {Course_FullName}. Visita <a href="{CourseURL}">{CourseURL}</a> per rimediare.</p>';
+$string['course_not_started_warning_subject'] = 'Promemoria: non hai ancora iniziato il corso {Course_FullName}';
+$string['course_not_started_warning_body'] = '<p>Gentile {User_FirstName},</p>
+<p>risulta che non hai ancora iniziato il corso <strong>{Course_FullName}</strong> su {Site_FullName}.</p>
+<p>Puoi accedere al corso da qui: <a href="{CourseURL}">{CourseURL}</a></p>
+<p>Nome utente: <strong>{User_Username}</strong><br>
+Password: quella che ti abbiamo inviato oppure, se l\'hai cambiata, la tua password personale.<br>
+Se non la ricordi puoi reimpostarla da questo link: <a href="{PasswordResetURL}">{PasswordResetURL}</a> oppure dalla pagina di login ("Hai dimenticato lo username o la password?").</p>';
 $string['trainingevent_not_selected_subject'] = 'Avviso: evento formativo non selezionato nel corso {Course_FullName}';
 $string['trainingevent_not_selected_body'] ='<p>Gentile {User_FirstName}.</p><p>Non ti sei iscritto a nessun evento formativo disponibile in {Course_FullName}. Visita <a href="{CourseURL}">{CourseURL}</a> per rimediare.</p>';
 $string['completion_warn_user_subject'] = 'Avviso: il corso {Course_FullName} non è stato completato';

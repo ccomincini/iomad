@@ -69,19 +69,45 @@ class course_not_started_task extends \core\task\scheduled_task {
                                                        AND co.visible = 1");
         foreach ($warnnotstartedcourses as $warnnotstartedcourse) {
             $checktime = time() - $warnnotstartedcourse->warnnotstarted * 60 * 60 *24;
-            $warnnotstartedusers = $DB->get_records_sql("SELECT * FROM {local_iomad_track}
-                                                       WHERE courseid = :courseid
-                                                       AND notstartedstop = 0
+            // A user is "not started" when there is no real access to the course (no user_lastaccess row)
+            // and the course is still reachable: either an active, already started enrolment (this covers
+            // instant licenses, whose tracking row gets timestarted at allocation time) or an unused,
+            // not expired license allocation. The reference time is the enrolment time when enrolled,
+            // otherwise the license allocation time.
+            $warnnotstartedusers = $DB->get_records_sql("SELECT lit.* FROM {local_iomad_track} lit
+                                                       WHERE lit.courseid = :courseid
+                                                       AND lit.notstartedstop = 0
+                                                       AND lit.coursecleared = 0
+                                                       AND (lit.timecompleted IS NULL OR lit.timecompleted = 0)
+                                                       AND COALESCE(lit.timeenrolled, lit.licenseallocated) < :time1
+                                                       AND NOT EXISTS (SELECT 1 FROM {user_lastaccess} ula
+                                                                       WHERE ula.userid = lit.userid
+                                                                       AND ula.courseid = lit.courseid)
                                                        AND (
-                                                           (NOT timestarted > 0
-                                                           AND timeenrolled < :time1
-                                                           AND licenseallocated IS NULL)
-                                                         ||
-                                                           (timeenrolled IS NULL
-                                                           AND licenseallocated < :time2
-                                                           AND licenseallocated IS NOT NULL)
+                                                           EXISTS (SELECT 1 FROM {user_enrolments} ue
+                                                                   JOIN {enrol} e ON (e.id = ue.enrolid)
+                                                                   WHERE ue.userid = lit.userid
+                                                                   AND e.courseid = lit.courseid
+                                                                   AND ue.status = 0
+                                                                   AND e.status = 0
+                                                                   AND (ue.timestart = 0 OR ue.timestart < :now1)
+                                                                   AND (ue.timeend = 0 OR ue.timeend > :now2))
+                                                         OR
+                                                           EXISTS (SELECT 1 FROM {companylicense_users} clu
+                                                                   JOIN {companylicense} cl ON (cl.id = clu.licenseid)
+                                                                   WHERE clu.userid = lit.userid
+                                                                   AND clu.licensecourseid = lit.courseid
+                                                                   AND clu.licenseid = lit.licenseid
+                                                                   AND clu.isusing = 0
+                                                                   AND cl.startdate < :now3
+                                                                   AND cl.expirydate > :now4)
                                                        )",
-                                                       array('time1' => $checktime, 'time2' => $checktime, 'courseid' => $warnnotstartedcourse->courseid));
+                                                       array('time1' => $checktime,
+                                                             'now1' => $runtime,
+                                                             'now2' => $runtime,
+                                                             'now3' => $runtime,
+                                                             'now4' => $runtime,
+                                                             'courseid' => $warnnotstartedcourse->courseid));
             foreach ($warnnotstartedusers as $notstarteduser) {
                 if ($userrec = $DB->get_record('user', array('id' => $notstarteduser->userid, 'suspended' => 0, 'deleted' => 0))) {
                     if ($courserec = $DB->get_record('course', array('id' => $notstarteduser->courseid))) {
@@ -110,10 +136,10 @@ class course_not_started_task extends \core\task\scheduled_task {
                                          AND templatename = :templatename
                                          AND modifiedtime > :timeenrolled",
                                         [
-                                            'userid' => $compuser->userid,
-                                            'courseid' => $compuser->courseid,
+                                            'userid' => $notstarteduser->userid,
+                                            'courseid' => $notstarteduser->courseid,
                                             'templatename' => 'course_not_started_warning',
-                                            'timeenrolled' => $compuser->timeenrolled,
+                                            'timeenrolled' => (int) ($notstarteduser->timeenrolled ?? $notstarteduser->licenseallocated ?? 0),
                                         ]
                                     );
 
@@ -136,8 +162,8 @@ class course_not_started_task extends \core\task\scheduled_task {
                                     if ($DB->record_exists(
                                         'email',
                                         [
-                                            'userid' => $compuser->userid,
-                                            'courseid' => $compuser->courseid,
+                                            'userid' => $notstarteduser->userid,
+                                            'courseid' => $notstarteduser->courseid,
                                             'templatename' => 'course_not_started_warning',
                                         ]
                                     )) {
@@ -165,7 +191,7 @@ class course_not_started_task extends \core\task\scheduled_task {
                                                                      array('userid' => $notstarteduser->userid,
                                                                            'courseid' => $notstarteduser->courseid,
                                                                            'templatename' => $templateinfo->name,
-                                                                           'timesent' => $notstarteduser->timeenrolled));
+                                                                           'timesent' => (int) ($notstarteduser->timeenrolled ?? $notstarteduser->licenseallocated ?? 0)));
                                 if ($sentcount >= $templateinfo->repeatvalue) {
                                     $notstarteduser->notstartedstop = 1;
                                     $notstarteduser->modifiedtime = $runtime;
