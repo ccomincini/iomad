@@ -646,6 +646,7 @@ class company_user {
                             'courseid' => $courseid,
                             'context' => \context_course::instance($courseid),
                             'relateduserid' => $user->id,
+                            'companyid' => $companyid,
                             'other' => ['enrol' => 'manual'],
                         ]
                     );
@@ -1308,7 +1309,7 @@ class company_user {
 
                 // Remove LTI information.
                 if (enrol_is_enabled('lti')) {
-                    $coursecontext = context_course::instance($courseid);
+                    $contextcourse = context_course::instance($courseid);
                     if ($ltitools = $DB->get_record('enrol_lti_tools', ['contextid' => $contextcourse->id])) {
                         foreach ($ltitools as $ltitool) {
                             $DB->set_value(
@@ -1351,7 +1352,7 @@ class company_user {
                 if ($DB->record_exists('modules', ['name' => 'hvp'])) {
                     if ($hvps = $DB->get_records('hvp', ['course' => $courseid])) {
                         foreach ($hvps as $hvp) {
-                            $DB->delete_records('hvp_content_user_data', ['hvp_id' => $hvp->id, 'userid' => $userid]);
+                            $DB->delete_records('hvp_content_user_data', ['hvp_id' => $hvp->id, 'user_id' => $userid]);
                         }
                     }
                 }

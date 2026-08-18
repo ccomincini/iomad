@@ -133,13 +133,8 @@ class auth_plugin_base {
     function __construct() {
         global $CFG;
 
-        require_once($CFG->dirroot . '/local/iomad/lib/company.php');
-        $companyid = iomad::get_my_companyid(context_system::instance(), false);
-        if (!empty($companyid)) {
-            $this->postfix = "_$companyid";
-        } else {
-            $this->postfix = "";
-        }
+        require_once($CFG->dirroot . '/local/iomad/lib/iomad.php');
+        $this->postfix = iomad::get_company_postfix();
     }
 
     /**
@@ -1245,9 +1240,11 @@ function signup_validate_data($data, $files) {
 
     // Construct fake user object to check password policy against required information.
     $tempuser = new stdClass();
-    // To prevent errors with check_password_policy(),
-    // the temporary user and the guest must not share the same ID.
-    $tempuser->id = (int)$CFG->siteguest + 1;
+    // The temporary user must not use an ID belonging to an existing user (or the guest),
+    // otherwise password policy callbacks may be passed the identity of an unrelated,
+    // persisted user (see MDL-89180). Real user IDs are always greater than zero, so 0 is
+    // guaranteed not to collide with the guest user or any existing account.
+    $tempuser->id = 0;
     $tempuser->username = $data['username'];
     $tempuser->firstname = $data['firstname'];
     $tempuser->lastname = $data['lastname'];

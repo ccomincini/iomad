@@ -32,14 +32,7 @@ $pass = optional_param('pass', '0', PARAM_INT);
 $secret = optional_param('secret', 0, PARAM_INT);
 
 // IOMAD
-require_once($CFG->dirroot . '/local/iomad/lib/company.php');
-$companyid = iomad::get_my_companyid(context_system::instance(), false);
-if (!empty($companyid) &&
-            get_config('tool_mfa', 'enabled'. "_$companyid") !== false) {
-    $postfix = "_$companyid";
-} else {
-    $postfix = "";
-}
+require_once($CFG->dirroot . '/local/iomad/lib/iomad.php');
 
 $context = context_system::instance();
 $PAGE->set_context($context);
@@ -56,6 +49,9 @@ $factor = \tool_mfa\plugininfo\factor::get_factor('email');
 // Require login to force $SESSION and user, and pass for that session.
 if (!empty($instance) && $pass != 0 && $secret != 0) {
     require_login();
+    if ((int)$instance->userid !== (int)$USER->id) {
+        throw new moodle_exception('error:parameters', 'factor_email');
+    }
     if ($factor->get_state() === \tool_mfa\plugininfo\factor::STATE_LOCKED) {
         // Redirect through to auth, this will bounce them to the next factor.
         redirect(new moodle_url('/admin/tool/mfa/auth.php'));
@@ -103,7 +99,7 @@ if ($fromform = $form->get_data()) {
         $event->trigger();
 
         // Suspend user account.
-        if (get_config('factor_email', 'suspend' . $postfix)) {
+        if (iomad::get_config('factor_email', 'suspend')) {
             $DB->set_field('user', 'suspended', 1, ['id' => $user->id]);
         }
 
